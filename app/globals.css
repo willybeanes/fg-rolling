@@ -3,16 +3,17 @@
 
 /* ─── Theme tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --bg:          #0e1117;
-  --surface:     #161b22;
-  --surface-2:   #1c2230;
-  --border:      rgba(255, 255, 255, 0.08);
-  --border-hi:   rgba(255, 255, 255, 0.15);
-  --text:        #e6edf3;
-  --muted:       #7d8590;
-  --accent:      #3fb950;
-  --accent-dim:  #238636;
-  --red:         #f85149;
+  --bg:          #f0ede8;
+  --surface:     #ffffff;
+  --surface-2:   #f0ede8;
+  --border:      rgba(0, 0, 0, 0.08);
+  --border-hi:   #d8d5d0;
+  --text:        #1a1a1a;
+  --muted:       #888888;
+  --muted-2:     #666666;
+  --accent:      #1a1a1a;
+  --accent-hover:#333333;
+  --red:         #c44820;
 }
 
 /* ─── Base reset ───────────────────────────────────────────────────────────── */
@@ -76,8 +77,9 @@ body {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 20px 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 /* ─── Controls ─────────────────────────────────────────────────────────────── */
@@ -96,17 +98,17 @@ body {
 
 .control-label {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
+  letter-spacing: 0.05em;
+  color: var(--muted-2);
 }
 
 .select-input {
   font-family: inherit;
   font-size: 13px;
   padding: 7px 10px;
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border-hi);
   border-radius: 8px;
@@ -115,14 +117,14 @@ body {
   cursor: pointer;
 }
 
-.select-input:focus { border-color: var(--accent); }
+.select-input:focus { border-color: #999; }
 
 /* ─── Search ───────────────────────────────────────────────────────────────── */
 .search-input {
   font-family: inherit;
   font-size: 13px;
   padding: 7px 12px;
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border-hi);
   border-radius: 8px;
@@ -132,7 +134,7 @@ body {
   transition: border-color 0.15s;
 }
 
-.search-input:focus { border-color: var(--accent); }
+.search-input:focus { border-color: #999; }
 .search-input:disabled { opacity: 0.45; cursor: not-allowed; }
 .search-input::placeholder { color: var(--muted); }
 
@@ -140,13 +142,13 @@ body {
   position: absolute;
   top: calc(100% + 4px);
   left: 0; right: 0;
-  background: var(--surface-2);
+  background: var(--surface);
   border: 1px solid var(--border-hi);
   border-radius: 10px;
   max-height: 280px;
   overflow-y: auto;
   z-index: 100;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
   list-style: none;
 }
 
@@ -161,7 +163,7 @@ body {
 }
 
 .search-item:last-child { border-bottom: none; }
-.search-item:hover, .search-item.highlighted { background: var(--surface); }
+.search-item:hover, .search-item.highlighted { background: var(--surface-2); }
 
 .search-name { font-size: 13px; font-weight: 500; color: var(--text); }
 
@@ -182,18 +184,18 @@ body {
 .btn-plot {
   font-family: inherit;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   padding: 8px 22px;
-  background: var(--accent-dim);
+  background: var(--accent);
   color: #fff;
-  border: 1px solid var(--accent);
+  border: none;
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s, opacity 0.15s;
   white-space: nowrap;
 }
 
-.btn-plot:hover:not(:disabled) { background: var(--accent); }
+.btn-plot:hover:not(:disabled) { background: var(--accent-hover); }
 .btn-plot:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-clear {
@@ -210,7 +212,7 @@ body {
   white-space: nowrap;
 }
 
-.btn-clear:hover { color: var(--text); }
+.btn-clear:hover { color: var(--text); border-color: #aaa; }
 
 /* ─── Player chips ──────────────────────────────────────────────────────────── */
 .chips-row {
@@ -227,12 +229,13 @@ body {
   align-items: center;
   gap: 6px;
   padding: 4px 8px 4px 6px;
-  background: var(--surface-2);
+  background: var(--surface);
   border: 1.5px solid;
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
 }
 
 .chip-avatar {
@@ -254,7 +257,7 @@ body {
   font-size: 10px;
   font-weight: 700;
   padding: 1px 5px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(0,0,0,0.06);
   border-radius: 4px;
   color: var(--muted);
   letter-spacing: 0.04em;
@@ -334,12 +337,12 @@ body {
 
 /* ─── Tooltip ────────────────────────────────────────────────────────────────── */
 .tooltip-box {
-  background: var(--surface-2);
+  background: var(--surface);
   border: 1px solid var(--border-hi);
   border-radius: 10px;
   padding: 10px 14px;
   min-width: 180px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
   font-size: 13px;
 }
 

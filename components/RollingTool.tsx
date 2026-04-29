@@ -43,7 +43,8 @@ interface GameLog {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const PLAYER_COLORS = ['#60a5fa', '#fbbf24', '#a78bfa', '#34d399', '#fb923c'];
+// Colorblind-friendly palette (Wong) — saturated enough for white background
+const PLAYER_COLORS = ['#0072B2', '#E69F00', '#CC79A7', '#009E73', '#56B4E9'];
 
 const METRICS = [
   { label: 'wOBA', field: 'wOBA', category: 'hit', isPercent: false, decimals: 3, avg: 0.312 },
@@ -215,7 +216,7 @@ function makeHeadshotDot(
             <circle cx={cx} cy={cy} r={r} />
           </clipPath>
         </defs>
-        <circle cx={cx} cy={cy} r={r + 2} fill={color} opacity={0.9} />
+        <circle cx={cx} cy={cy} r={r + 2} fill="#fff" stroke={color} strokeWidth={2} />
         {headshotSrc ? (
           <image
             href={headshotSrc}
@@ -563,12 +564,12 @@ export default function RollingTool() {
               <div className="chart-wrap">
                 <ResponsiveContainer width="100%" height={420}>
                   <LineChart data={chartData} margin={{ top: 16, right: 32, bottom: 8, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ede9e4" />
                     <XAxis
                       dataKey="game"
-                      label={{ value: 'Game #', position: 'insideBottomRight', offset: -8, fill: '#7d8590', fontSize: 11 }}
-                      tick={{ fill: '#7d8590', fontSize: 11 }}
-                      stroke="rgba(255,255,255,0.12)"
+                      label={{ value: 'Game #', position: 'insideBottomRight', offset: -8, fill: '#999', fontSize: 11 }}
+                      tick={{ fill: '#999', fontSize: 11 }}
+                      stroke="#d8d5d0"
                     />
                     <YAxis
                       domain={yDomain}
@@ -576,8 +577,8 @@ export default function RollingTool() {
                         if (plotMetric.isPercent) return `${(v * 100).toFixed(plotMetric.decimals)}%`;
                         return v.toFixed(plotMetric.decimals);
                       }}
-                      tick={{ fill: '#7d8590', fontSize: 11 }}
-                      stroke="rgba(255,255,255,0.12)"
+                      tick={{ fill: '#999', fontSize: 11 }}
+                      stroke="#d8d5d0"
                       width={60}
                     />
                     <Tooltip
@@ -587,19 +588,19 @@ export default function RollingTool() {
                           metric={plotMetric}
                         />
                       }
-                      cursor={{ stroke: 'rgba(255,255,255,0.15)', strokeWidth: 1 }}
+                      cursor={{ stroke: 'rgba(0,0,0,0.12)', strokeWidth: 1 }}
                     />
                     {/* MLB average reference line */}
                     {plotMetric.avg !== undefined && (
                       <ReferenceLine
                         y={plotMetric.avg}
-                        stroke="rgba(255,255,255,0.2)"
+                        stroke="rgba(0,0,0,0.18)"
                         strokeDasharray="6 3"
                         label={{
                           value: `MLB avg ${plotMetric.isPercent
                             ? `${(plotMetric.avg * 100).toFixed(1)}%`
                             : plotMetric.avg.toFixed(plotMetric.decimals)}`,
-                          fill: '#7d8590',
+                          fill: '#999',
                           fontSize: 10,
                           position: 'insideTopRight',
                         }}
@@ -615,7 +616,7 @@ export default function RollingTool() {
                           stroke={player.color}
                           strokeWidth={2.5}
                           dot={makeHeadshotDot(key, player.headshotUrl, player.firstValidIndex, player.color)}
-                          activeDot={{ r: 4, fill: player.color, stroke: '#0e1117', strokeWidth: 2 }}
+                          activeDot={{ r: 4, fill: player.color, stroke: '#fff', strokeWidth: 2 }}
                           connectNulls={false}
                           isAnimationActive={false}
                         />
