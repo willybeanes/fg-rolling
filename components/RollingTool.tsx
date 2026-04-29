@@ -80,8 +80,10 @@ function parseVal(raw: unknown): number | null {
 
 function computeRolling(vals: (number | null)[], window: number): (number | null)[] {
   return vals.map((_, i) => {
-    if (i < window - 1) return null;
-    const slice = vals.slice(i - window + 1, i + 1).filter((v): v is number => v !== null);
+    // Use partial window for early games (matches FanGraphs behavior):
+    // game 1 = just that game's value, game 2 = avg of 1-2, ..., game N = avg of (N-window+1)..N
+    const start = Math.max(0, i - window + 1);
+    const slice = vals.slice(start, i + 1).filter((v): v is number => v !== null);
     if (slice.length === 0) return null;
     return slice.reduce((a, b) => a + b, 0) / slice.length;
   });
