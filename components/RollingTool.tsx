@@ -113,9 +113,11 @@ function headshotUrl(mlbamid: number | null): string | null {
 function PlayerSearch({
   onSelect,
   disabled,
+  playerTypeFilter,
 }: {
   onSelect: (p: FgPlayer) => void;
   disabled: boolean;
+  playerTypeFilter: 'h' | 'p';
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<FgPlayer[]>([]);
@@ -179,19 +181,21 @@ function PlayerSearch({
       )}
       {open && (
         <ul ref={listRef} className="search-dropdown">
-          {results.map((p, i) => (
-            <li
-              key={`${p.playerid}-${p.searchType}`}
-              className={`search-item ${i === highlighted ? 'highlighted' : ''}`}
-              onMouseDown={() => select(p)}
-              onMouseEnter={() => setHighlighted(i)}
-            >
-              <span className="search-name">{p.name}</span>
-              <span className="search-meta">
-                {p.team ?? ''}{p.pos ? ` · ${p.pos}` : ''} · {p.searchType === 'p' ? 'P' : 'H'}
-              </span>
-            </li>
-          ))}
+          {results
+            .filter(p => p.searchType === playerTypeFilter)
+            .map((p, i) => (
+              <li
+                key={`${p.playerid}-${p.searchType}`}
+                className={`search-item ${i === highlighted ? 'highlighted' : ''}`}
+                onMouseDown={() => select(p)}
+                onMouseEnter={() => setHighlighted(i)}
+              >
+                <span className="search-name">{p.name}</span>
+                <span className="search-meta">
+                  {p.team ?? ''}{p.pos ? ` · ${p.pos}` : ''}
+                </span>
+              </li>
+            ))}
         </ul>
       )}
     </div>
@@ -303,6 +307,7 @@ function ChartLegend({ players }: { players: SelectedPlayer[] }) {
 // ─── Main Tool ────────────────────────────────────────────────────────────────
 
 export default function RollingTool() {
+  const [playerType, setPlayerType] = useState<'hit' | 'pit'>('hit');
   const [selectedPlayers, setSelectedPlayers] = useState<SelectedPlayer[]>([]);
   const [metric, setMetric] = useState<MetricLabel>('wOBA');
   const [window, setWindow] = useState<number>(15);
@@ -313,6 +318,22 @@ export default function RollingTool() {
   const [plotPlayers, setPlotPlayers] = useState<SelectedPlayer[]>([]);
   const [plotMetric, setPlotMetric] = useState<typeof METRICS[number]>(getMetric('wOBA'));
   const colorIndex = useRef(0);
+
+  // Metrics available for the active tab
+  const tabMetrics = METRICS.filter(m => m.category !== (playerType === 'hit' ? 'pit' : 'hit'));
+
+  function switchTab(type: 'hit' | 'pit') {
+    if (type === playerType) return;
+    setPlayerType(type);
+    setSelectedPlayers([]);
+    setChartData([]);
+    setPlotPlayers([]);
+    setError(null);
+    colorIndex.current = 0;
+    // Default metric for this tab
+    const first = METRICS.find(m => m.category !== (type === 'hit' ? 'pit' : 'hit'));
+    if (first) setMetric(first.label);
+  }
 
   function addPlayer(p: FgPlayer) {
     if (selectedPlayers.length >= 5) return;
@@ -447,13 +468,33 @@ export default function RollingTool() {
       </header>
 
       <main className="tool-main">
+        {/* Tab bar */}
+        <div className="tab-bar">
+          <button
+            className={`tab ${playerType === 'hit' ? 'active' : ''}`}
+            onClick={() => switchTab('hit')}
+          >
+            Hitter Rolling Chart
+          </button>
+          <button
+            className={`tab ${playerType === 'pit' ? 'active' : ''}`}
+            onClick={() => switchTab('pit')}
+          >
+            Pitcher Rolling Chart
+          </button>
+        </div>
+
         {/* Controls card */}
         <div className="card controls-card">
           <div className="controls-row">
             {/* Player search */}
             <div className="control-group" style={{ flex: '1 1 260px' }}>
               <label className="control-label">Add Player</label>
-              <PlayerSearch onSelect={addPlayer} disabled={selectedPlayers.length >= 5} />
+              <PlayerSearch
+                onSelect={addPlayer}
+                disabled={selectedPlayers.length >= 5}
+                playerTypeFilter={playerType === 'hit' ? 'h' : 'p'}
+              />
             </div>
 
             {/* Metric */}
@@ -464,16 +505,9 @@ export default function RollingTool() {
                 value={metric}
                 onChange={e => setMetric(e.target.value as MetricLabel)}
               >
-                <optgroup label="Hitter">
-                  {METRICS.filter(m => m.category !== 'pit').map(m => (
-                    <option key={m.label} value={m.label}>{m.label}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="Pitcher">
-                  {METRICS.filter(m => m.category !== 'hit').map(m => (
-                    <option key={m.label} value={m.label}>{m.label}</option>
-                  ))}
-                </optgroup>
+                {tabMetrics.map(m => (
+                  <option key={m.label} value={m.label}>{m.label}</option>
+                ))}
               </select>
             </div>
 

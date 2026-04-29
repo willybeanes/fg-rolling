@@ -82,6 +82,35 @@ body {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
+/* ─── Tab bar ───────────────────────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  margin-bottom: 20px;
+}
+
+.tab {
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 500;
+  padding: 10px 24px;
+  background: none;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  color: #999;
+  cursor: pointer;
+  letter-spacing: -0.3px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab:hover { color: #666; }
+
+.tab.active {
+  color: #1a1a1a;
+  font-weight: 600;
+  border-bottom-color: #1a1a1a;
+}
+
 /* ─── Controls ─────────────────────────────────────────────────────────────── */
 .controls-row {
   display: flex;
