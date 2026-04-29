@@ -30,7 +30,7 @@ interface SelectedPlayer extends FgPlayer {
   rolling: (number | null)[];
   gameDates: string[];
   gameVals: (number | null)[];
-  firstValidIndex: number;
+  lastValidIndex: number;
   totalGames: number;
   headshotUrl: string | null;
 }
@@ -198,17 +198,17 @@ function PlayerSearch({
   );
 }
 
-// ─── Custom Dot (headshot at first rolling point) ─────────────────────────────
+// ─── Custom Dot (headshot at last rolling point) ──────────────────────────────
 
 function makeHeadshotDot(
   playerId: string,
   headshotSrc: string | null,
-  firstValidIndex: number,
+  lastValidIndex: number,
   color: string,
 ) {
   const Dot = (props: Record<string, unknown>) => {
     const { cx, cy, index } = props as { cx: number; cy: number; index: number };
-    if (index !== firstValidIndex || cx === undefined || cy === undefined) return null;
+    if (index !== lastValidIndex || cx === undefined || cy === undefined) return null;
     const r = 17;
     const clipId = `clip-hs-${playerId}`;
     return (
@@ -326,7 +326,7 @@ export default function RollingTool() {
       rolling: [],
       gameDates: [],
       gameVals: [],
-      firstValidIndex: -1,
+      lastValidIndex: -1,
       totalGames: 0,
       headshotUrl: headshotUrl(p.mlbamid),
     }]);
@@ -371,21 +371,22 @@ export default function RollingTool() {
           const games: GameLog[] = await res.json();
 
           if (!Array.isArray(games) || games.length === 0) {
-            return { ...player, rolling: [], gameDates: [], gameVals: [], firstValidIndex: -1, totalGames: 0 };
+            return { ...player, rolling: [], gameDates: [], gameVals: [], lastValidIndex: -1, totalGames: 0 };
           }
 
           const rawVals = games.map(g => parseVal(g[mc.field]));
           // Strip HTML from FanGraphs date strings (<a href="...">2026-04-28</a>)
           const dates = games.map(g => stripHtml(String(g.Date ?? g.date ?? '')));
           const rolling = computeRolling(rawVals, window);
-          const firstValidIndex = rolling.findIndex(v => v !== null);
+          const lastIdx = [...rolling].reverse().findIndex(v => v !== null);
+          const lastValidIndex = lastIdx === -1 ? -1 : rolling.length - 1 - lastIdx;
 
           return {
             ...player,
             rolling,
             gameDates: dates,
             gameVals: rawVals,
-            firstValidIndex,
+            lastValidIndex,
             totalGames: games.length,
           };
         })
@@ -617,7 +618,7 @@ export default function RollingTool() {
                           dataKey={key}
                           stroke={player.color}
                           strokeWidth={2.5}
-                          dot={makeHeadshotDot(key, player.headshotUrl, player.firstValidIndex, player.color)}
+                          dot={makeHeadshotDot(key, player.headshotUrl, player.lastValidIndex, player.color)}
                           activeDot={{ r: 4, fill: player.color, stroke: '#fff', strokeWidth: 2 }}
                           connectNulls={false}
                           isAnimationActive={false}
