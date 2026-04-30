@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
     // ── Team roster lookup ──────────────────────────────────────────────────
     const team = matchTeam(str);
     if (team) {
-      const rosterUrl = `https://statsapi.mlb.com/api/v1/teams/${team.id}/roster?rosterType=active&season=${season}`;
+      const rosterUrl = `https://statsapi.mlb.com/api/v1/teams/${team.id}/roster?rosterType=fullSeason&season=${season}`;
       const rosterRes = await fetch(rosterUrl, {
         headers: { Accept: 'application/json' },
         next: { revalidate: 3600 },
