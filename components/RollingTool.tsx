@@ -103,6 +103,34 @@ function stripHtml(s: string): string {
   return s.replace(/<[^>]+>/g, '').trim();
 }
 
+// Format ISO date "2026-04-29" → "Apr 29" (no UTC-shift risk)
+function formatDate(iso: string): string {
+  const parts = iso.split('-');
+  if (parts.length < 3) return iso;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+  return `${months[m - 1]} ${d}`;
+}
+
+// Pick tick dates spaced at least minDays apart so the X-axis isn't overcrowded
+function pickTicks(dates: string[], minDays = 7): string[] {
+  const ticks: string[] = [];
+  let lastMs = -Infinity;
+  for (const d of dates) {
+    const ms = new Date(d).getTime();
+    if (ms - lastMs >= minDays * 86_400_000) {
+      ticks.push(d);
+      lastMs = ms;
+    }
+  }
+  // Always include the last date
+  if (dates.length > 0 && ticks[ticks.length - 1] !== dates[dates.length - 1]) {
+    ticks.push(dates[dates.length - 1]);
+  }
+  return ticks;
+}
+
 function headshotUrl(mlbamid: number | null): string | null {
   if (!mlbamid) return null;
   return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${mlbamid}/headshot/67/current`;
@@ -329,7 +357,7 @@ function CustomTooltip({
 }: {
   active?: boolean;
   payload?: Array<{ color: string; value: number | null; dataKey: string }>;
-  label?: number;
+  label?: string;
   players: SelectedPlayer[];
   metric: typeof METRICS[number];
 }) {
@@ -337,13 +365,13 @@ function CustomTooltip({
 
   return (
     <div className="tooltip-box">
-      <div className="tooltip-game">Game {label}</div>
+      <div className="tooltip-game">{label ? formatDate(label) : ''}</div>
       {payload.map(entry => {
-        const player = players.find(p => p.playerid === entry.dataKey || `${p.playerid}-${p.searchType}` === entry.dataKey);
+        const player = players.find(p => `${p.playerid}-${p.searchType}` === entry.dataKey);
         if (!player || entry.value === null || entry.value === undefined) return null;
-        const gameIdx = (label ?? 1) - 1;
-        const rawVal = player.gameVals[gameIdx];
-        const date = player.gameDates[gameIdx];
+        // Look up the raw value for this specific date
+        const gameIdx = player.gameDates.indexOf(String(label));
+        const rawVal = gameIdx !== -1 ? player.gameVals[gameIdx] : null;
         return (
           <div key={entry.dataKey} className="tooltip-row">
             <span className="tooltip-dot" style={{ background: entry.color }} />
@@ -351,9 +379,8 @@ function CustomTooltip({
             <div className="tooltip-vals">
               <span className="tooltip-rolling">{formatVal(entry.value, metric)}</span>
               {rawVal !== null && rawVal !== undefined && (
-                <span className="tooltip-raw"> ({formatVal(rawVal, metric)} raw)</span>
+                <span className="tooltip-raw">({formatVal(rawVal, metric)} that game)</span>
               )}
-              {date && <span className="tooltip-date">{date}</span>}
             </div>
           </div>
         );
@@ -493,34 +520,53 @@ export default function RollingTool() {
           // Strip HTML from FanGraphs date strings (<a href="...">2026-04-28</a>)
           const dates = games.map(g => stripHtml(String(g.Date ?? g.date ?? '')));
           const rolling = computeRolling(rawVals, rollingWindow);
-          const lastIdx = [...rolling].reverse().findIndex(v => v !== null);
-          const lastValidIndex = lastIdx === -1 ? -1 : rolling.length - 1 - lastIdx;
 
           return {
             ...player,
             rolling,
             gameDates: dates,
             gameVals: rawVals,
-            lastValidIndex,
+            lastValidIndex: -1, // will be set after chart data is built
             totalGames: games.length,
           };
         })
       );
 
-      const maxGames = Math.max(...enriched.map(p => p.rolling.length), 0);
-      const data = Array.from({ length: maxGames }, (_, i) => {
-        const point: Record<string, unknown> = { game: i + 1 };
-        for (const p of enriched) {
+      // Build a unified, sorted date axis covering every game date across all players
+      const allDates = [...new Set(enriched.flatMap(p => p.gameDates.filter(Boolean)))].sort();
+
+      // Build per-player date → {rolling, raw} maps (last game wins for doubleheaders)
+      const dateMaps = enriched.map(p => {
+        const map = new Map<string, { rolling: number | null; raw: number | null }>();
+        p.gameDates.forEach((date, i) => {
+          if (date) map.set(date, { rolling: p.rolling[i] ?? null, raw: p.gameVals[i] ?? null });
+        });
+        return map;
+      });
+
+      // Chart data indexed by date
+      const data = allDates.map(date => {
+        const point: Record<string, unknown> = { date };
+        enriched.forEach((p, pi) => {
           const key = `${p.playerid}-${p.searchType}`;
-          point[key] = p.rolling[i] ?? undefined;
-          // Also store raw val under raw_ key for tooltip
-          point[`raw_${key}`] = p.gameVals[i] ?? undefined;
-          point[`date_${key}`] = p.gameDates[i] ?? '';
-        }
+          const entry = dateMaps[pi].get(date);
+          if (entry && entry.rolling !== null) {
+            point[key] = entry.rolling;
+          }
+          // raw val stored for tooltip lookup via player.gameDates.indexOf
+        });
         return point;
       });
 
-      setPlotPlayers(enriched);
+      // Set lastValidIndex to the chart data (date) index of each player's last game
+      const enrichedFinal = enriched.map((p, pi) => {
+        const key = `${p.playerid}-${p.searchType}`;
+        let lastValidIndex = -1;
+        data.forEach((point, i) => { if (point[key] !== undefined) lastValidIndex = i; });
+        return { ...p, lastValidIndex };
+      });
+
+      setPlotPlayers(enrichedFinal);
       setPlotMetric(mc);
       setChartData(data);
     } catch (e) {
@@ -709,8 +755,10 @@ export default function RollingTool() {
                   <LineChart data={chartData} margin={{ top: 16, right: 32, bottom: 8, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#ede9e4" />
                     <XAxis
-                      dataKey="game"
-                      label={{ value: 'Game #', position: 'insideBottomRight', offset: -8, fill: '#999', fontSize: 11 }}
+                      dataKey="date"
+                      type="category"
+                      ticks={pickTicks(chartData.map(d => d.date as string))}
+                      tickFormatter={formatDate}
                       tick={{ fill: '#999', fontSize: 11 }}
                       stroke="#d8d5d0"
                     />
