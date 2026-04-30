@@ -114,10 +114,12 @@ function PlayerSearch({
   onSelect,
   disabled,
   playerTypeFilter,
+  season,
 }: {
   onSelect: (p: FgPlayer) => void;
   disabled: boolean;
   playerTypeFilter: 'h' | 'p';
+  season: number;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<FgPlayer[]>([]);
@@ -134,7 +136,7 @@ function PlayerSearch({
     timer.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/fg-search?str=${encodeURIComponent(query)}`);
+        const res = await fetch(`/api/fg-search?str=${encodeURIComponent(query)}&season=${season}`);
         const data: FgPlayer[] = await res.json();
         setResults(data);
         setOpen(data.length > 0);
@@ -494,6 +496,7 @@ export default function RollingTool() {
                 onSelect={addPlayer}
                 disabled={selectedPlayers.length >= 5}
                 playerTypeFilter={playerType === 'hit' ? 'h' : 'p'}
+                season={season}
               />
             </div>
 
