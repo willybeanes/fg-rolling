@@ -692,7 +692,7 @@ export default function RollingTool() {
               <label className="control-label">Window (games)</label>
               <input
                 type="number"
-                className="select-input"
+                className="select-input window-input"
                 min={WINDOW_MIN}
                 max={WINDOW_MAX}
                 value={windowInput}
@@ -703,7 +703,6 @@ export default function RollingTool() {
                   setRollingWindow(clamped);
                   setWindowInput(String(clamped));
                 }}
-                style={{ width: 72 }}
               />
             </div>
 
@@ -781,8 +780,8 @@ export default function RollingTool() {
               <div className="chart-title">{chartTitle}</div>
               <ChartLegend players={plotPlayers} />
               <div className="chart-wrap">
-                <ResponsiveContainer width="100%" height={420}>
-                  <LineChart data={chartData} margin={{ top: 16, right: 32, bottom: 8, left: 0 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 16, right: 28, bottom: 4, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#ede9e4" />
                     <XAxis
                       dataKey="date"
