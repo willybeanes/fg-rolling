@@ -430,6 +430,7 @@ export default function RollingTool() {
   const [selectedPlayers, setSelectedPlayers] = useState<SelectedPlayer[]>(urlState?.players ?? []);
   const [metric, setMetric] = useState<MetricLabel>(urlState?.metric ?? 'wOBA');
   const [rollingWindow, setRollingWindow] = useState<number>(urlState?.rollingWindow ?? 15);
+  const [windowInput, setWindowInput] = useState<string>(String(urlState?.rollingWindow ?? 15));
   const [season, setSeason] = useState<number>(urlState?.season ?? 2026);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -694,14 +695,13 @@ export default function RollingTool() {
                 className="select-input"
                 min={WINDOW_MIN}
                 max={WINDOW_MAX}
-                value={rollingWindow}
-                onChange={e => {
-                  const v = parseInt(e.target.value);
-                  if (!isNaN(v)) setRollingWindow(Math.min(WINDOW_MAX, Math.max(WINDOW_MIN, v)));
-                }}
-                onBlur={e => {
-                  const v = parseInt(e.target.value);
-                  setRollingWindow(isNaN(v) ? 15 : Math.min(WINDOW_MAX, Math.max(WINDOW_MIN, v)));
+                value={windowInput}
+                onChange={e => setWindowInput(e.target.value)}
+                onBlur={() => {
+                  const v = parseInt(windowInput);
+                  const clamped = isNaN(v) ? rollingWindow : Math.min(WINDOW_MAX, Math.max(WINDOW_MIN, v));
+                  setRollingWindow(clamped);
+                  setWindowInput(String(clamped));
                 }}
                 style={{ width: 72 }}
               />
