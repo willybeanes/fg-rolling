@@ -371,10 +371,12 @@ function CustomTooltip({
       {payload.map(entry => {
         const player = players.find(p => `${p.playerid}-${p.searchType}` === entry.dataKey);
         if (!player || entry.value === null || entry.value === undefined) return null;
-        const gameIdx = player.gameDates.indexOf(String(label));
+        // Use the stored game index (gi_) so carry-forward dates still show correct window range
+        const point = (entry as unknown as { payload: Record<string, unknown> }).payload;
+        const gameIdx = (point[`gi_${entry.dataKey}`] as number) ?? -1;
         const windowStartIdx = Math.max(0, gameIdx - rollingWindow + 1);
         const windowStartDate = gameIdx !== -1 ? player.gameDates[windowStartIdx] : null;
-        const windowEndDate = String(label);
+        const windowEndDate = gameIdx !== -1 ? player.gameDates[gameIdx] : String(label);
         return (
           <div key={entry.dataKey} className="tooltip-row">
             <span className="tooltip-dot" style={{ background: entry.color }} />
@@ -542,34 +544,44 @@ export default function RollingTool() {
       // Build a unified, sorted date axis covering every game date across all players
       const allDates = [...new Set(enriched.flatMap(p => p.gameDates.filter(Boolean)))].sort();
 
-      // Build per-player date → {rolling, raw} maps (last game wins for doubleheaders)
+      // Build per-player date → {rolling, raw, gameIdx} maps (last game wins for doubleheaders)
       const dateMaps = enriched.map(p => {
-        const map = new Map<string, { rolling: number | null; raw: number | null }>();
+        const map = new Map<string, { rolling: number | null; raw: number | null; gameIdx: number }>();
         p.gameDates.forEach((date, i) => {
-          if (date) map.set(date, { rolling: p.rolling[i] ?? null, raw: p.gameVals[i] ?? null });
+          if (date) map.set(date, { rolling: p.rolling[i] ?? null, raw: p.gameVals[i] ?? null, gameIdx: i });
         });
         return map;
       });
 
-      // Chart data indexed by date
+      // Chart data indexed by date — carry the last rolling value forward on rest days
+      // so lines are continuous. gi_ stores the effective game index for tooltip date ranges.
+      const lastKnown: (number | null)[] = enriched.map(() => null);
+      const lastGameIdx: number[] = enriched.map(() => -1);
+
       const data = allDates.map(date => {
         const point: Record<string, unknown> = { date };
         enriched.forEach((p, pi) => {
           const key = `${p.playerid}-${p.searchType}`;
           const entry = dateMaps[pi].get(date);
           if (entry && entry.rolling !== null) {
-            point[key] = entry.rolling;
+            lastKnown[pi] = entry.rolling;
+            lastGameIdx[pi] = entry.gameIdx;
           }
-          // raw val stored for tooltip lookup via player.gameDates.indexOf
+          // Always emit a value once the player has started (carry forward on rest days)
+          if (lastKnown[pi] !== null) {
+            point[key] = lastKnown[pi];
+            point[`gi_${key}`] = lastGameIdx[pi]; // effective game index for tooltip
+          }
         });
         return point;
       });
 
-      // Set lastValidIndex to the chart data (date) index of each player's last game
+      // lastValidIndex = chart index of each player's last *actual* game (for headshot dot)
       const enrichedFinal = enriched.map((p, pi) => {
-        const key = `${p.playerid}-${p.searchType}`;
         let lastValidIndex = -1;
-        data.forEach((point, i) => { if (point[key] !== undefined) lastValidIndex = i; });
+        allDates.forEach((date, i) => {
+          if (dateMaps[pi].has(date)) lastValidIndex = i;
+        });
         return { ...p, lastValidIndex };
       });
 
