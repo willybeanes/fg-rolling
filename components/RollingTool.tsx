@@ -115,14 +115,17 @@ function PlayerSearch({
   disabled,
   playerTypeFilter,
   season,
+  selectedKeys,
 }: {
   onSelect: (p: FgPlayer) => void;
   disabled: boolean;
   playerTypeFilter: 'h' | 'p';
   season: number;
+  selectedKeys: Set<string>;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<FgPlayer[]>([]);
+  const [isTeamSearch, setIsTeamSearch] = useState(false);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
@@ -131,13 +134,16 @@ function PlayerSearch({
   const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
-    if (query.length < 2) { setResults([]); setOpen(false); return; }
+    if (query.length < 2) { setResults([]); setOpen(false); setIsTeamSearch(false); return; }
     clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
       setLoading(true);
       try {
         const res = await fetch(`/api/fg-search?str=${encodeURIComponent(query)}&season=${season}`);
         const data: FgPlayer[] = await res.json();
+        // Detect team search: all results share the same non-empty team
+        const teamSearch = data.length > 2 && data.every(p => p.team && p.team === data[0].team);
+        setIsTeamSearch(teamSearch);
         setResults(data);
         setOpen(data.length > 0);
         setHighlighted(-1);
@@ -145,21 +151,30 @@ function PlayerSearch({
       finally { setLoading(false); }
     }, 280);
     return () => clearTimeout(timer.current);
-  }, [query]);
+  }, [query, season]);
 
   function select(p: FgPlayer) {
+    const key = `${p.playerid}-${p.searchType}`;
+    if (selectedKeys.has(key)) return; // already added
     onSelect(p);
-    setQuery('');
-    setResults([]);
-    setOpen(false);
-    inputRef.current?.focus();
+    if (isTeamSearch) {
+      // Keep dropdown open so user can pick more teammates
+      inputRef.current?.focus();
+    } else {
+      setQuery('');
+      setResults([]);
+      setOpen(false);
+      inputRef.current?.focus();
+    }
   }
+
+  const visibleResults = results.filter(p => p.searchType === playerTypeFilter);
 
   function handleKey(e: React.KeyboardEvent) {
     if (!open) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlighted(h => Math.min(h + 1, results.length - 1)); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlighted(h => Math.min(h + 1, visibleResults.length - 1)); }
     if (e.key === 'ArrowUp') { e.preventDefault(); setHighlighted(h => Math.max(h - 1, 0)); }
-    if (e.key === 'Enter' && highlighted >= 0) { e.preventDefault(); select(results[highlighted]); }
+    if (e.key === 'Enter' && highlighted >= 0) { e.preventDefault(); select(visibleResults[highlighted]); }
     if (e.key === 'Escape') { setOpen(false); }
   }
 
@@ -173,7 +188,7 @@ function PlayerSearch({
         onKeyDown={handleKey}
         onFocus={() => results.length > 0 && setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder={disabled ? 'Max 5 players' : 'Search player…'}
+        placeholder={disabled ? 'Max 5 players' : 'Search player or team…'}
         disabled={disabled}
         className="search-input"
         autoComplete="off"
@@ -183,21 +198,24 @@ function PlayerSearch({
       )}
       {open && (
         <ul ref={listRef} className="search-dropdown">
-          {results
-            .filter(p => p.searchType === playerTypeFilter)
-            .map((p, i) => (
+          {visibleResults.map((p, i) => {
+            const key = `${p.playerid}-${p.searchType}`;
+            const added = selectedKeys.has(key);
+            return (
               <li
-                key={`${p.playerid}-${p.searchType}`}
-                className={`search-item ${i === highlighted ? 'highlighted' : ''}`}
+                key={key}
+                className={`search-item ${i === highlighted ? 'highlighted' : ''} ${added ? 'added' : ''}`}
                 onMouseDown={() => select(p)}
                 onMouseEnter={() => setHighlighted(i)}
+                style={{ opacity: added ? 0.4 : 1, cursor: added ? 'default' : 'pointer' }}
               >
                 <span className="search-name">{p.name}</span>
                 <span className="search-meta">
-                  {p.team ?? ''}{p.pos ? ` · ${p.pos}` : ''}
+                  {added ? '✓ ' : ''}{p.team ?? ''}{p.pos ? ` · ${p.pos}` : ''}
                 </span>
               </li>
-            ))}
+            );
+          })}
         </ul>
       )}
     </div>
@@ -497,6 +515,7 @@ export default function RollingTool() {
                 disabled={selectedPlayers.length >= 5}
                 playerTypeFilter={playerType === 'hit' ? 'h' : 'p'}
                 season={season}
+                selectedKeys={new Set(selectedPlayers.map(p => `${p.playerid}-${p.searchType}`))}
               />
             </div>
 
