@@ -28,6 +28,7 @@ interface FgPlayer {
 interface SelectedPlayer extends FgPlayer {
   color: string;
   rolling: (number | null)[];
+  windowStarts: number[];
   gameDates: string[];
   gameVals: (number | null)[];
   lastValidIndex: number;
@@ -79,15 +80,37 @@ function parseVal(raw: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
-function computeRolling(vals: (number | null)[], window: number): (number | null)[] {
-  return vals.map((_, i) => {
-    // Use partial window for early games (matches FanGraphs behavior):
-    // game 1 = just that game's value, game 2 = avg of 1-2, ..., game N = avg of (N-window+1)..N
-    const start = Math.max(0, i - window + 1);
-    const slice = vals.slice(start, i + 1).filter((v): v is number => v !== null);
-    if (slice.length === 0) return null;
-    return slice.reduce((a, b) => a + b, 0) / slice.length;
-  });
+// Returns rolling averages AND the game index where each window starts.
+// Walks backwards from each game collecting up to `window` non-null values,
+// so null games (0 PA, defensive sub, etc.) don't consume a window slot —
+// matching FanGraphs' behaviour.
+function computeRolling(
+  vals: (number | null)[],
+  window: number,
+): { rolling: (number | null)[]; windowStarts: number[] } {
+  const rolling: (number | null)[] = [];
+  const windowStarts: number[] = [];
+
+  for (let i = 0; i < vals.length; i++) {
+    const collected: number[] = [];
+    let startIdx = i;
+    for (let j = i; j >= 0 && collected.length < window; j--) {
+      const v = vals[j];
+      if (v !== null && v !== undefined) {
+        collected.push(v);
+        startIdx = j;
+      }
+    }
+    if (collected.length === 0) {
+      rolling.push(null);
+      windowStarts.push(i);
+    } else {
+      rolling.push(collected.reduce((a, b) => a + b, 0) / collected.length);
+      windowStarts.push(startIdx);
+    }
+  }
+
+  return { rolling, windowStarts };
 }
 
 function formatVal(val: number, metric: typeof METRICS[number]): string {
@@ -157,6 +180,7 @@ function decodePlayerParam(s: string, color: string): SelectedPlayer | null {
     pos: '',
     color,
     rolling: [],
+    windowStarts: [],
     gameDates: [],
     gameVals: [],
     lastValidIndex: -1,
@@ -375,8 +399,8 @@ function CustomTooltip({
         // Use the stored game index (gi_) so carry-forward dates still show correct window range
         const point = (entry as unknown as { payload: Record<string, unknown> }).payload;
         const gameIdx = (point[`gi_${entry.dataKey}`] as number) ?? -1;
-        const windowStartIdx = Math.max(0, gameIdx - rollingWindow + 1);
-        const windowStartDate = gameIdx !== -1 ? player.gameDates[windowStartIdx] : null;
+        const windowStartIdx = gameIdx !== -1 ? (player.windowStarts[gameIdx] ?? gameIdx) : -1;
+        const windowStartDate = windowStartIdx !== -1 ? player.gameDates[windowStartIdx] : null;
         const windowEndDate = gameIdx !== -1 ? player.gameDates[gameIdx] : String(label);
         return (
           <div key={entry.dataKey} className="tooltip-row">
@@ -477,6 +501,7 @@ export default function RollingTool() {
       ...p,
       color,
       rolling: [],
+      windowStarts: [],
       gameDates: [],
       gameVals: [],
       lastValidIndex: -1,
@@ -524,17 +549,18 @@ export default function RollingTool() {
           const games: GameLog[] = await res.json();
 
           if (!Array.isArray(games) || games.length === 0) {
-            return { ...player, rolling: [], gameDates: [], gameVals: [], lastValidIndex: -1, totalGames: 0 };
+            return { ...player, rolling: [], windowStarts: [], gameDates: [], gameVals: [], lastValidIndex: -1, totalGames: 0 };
           }
 
           const rawVals = games.map(g => parseVal(g[mc.field]));
           // Strip HTML from FanGraphs date strings (<a href="...">2026-04-28</a>)
           const dates = games.map(g => stripHtml(String(g.Date ?? g.date ?? '')));
-          const rolling = computeRolling(rawVals, rollingWindow);
+          const { rolling, windowStarts } = computeRolling(rawVals, rollingWindow);
 
           return {
             ...player,
             rolling,
+            windowStarts,
             gameDates: dates,
             gameVals: rawVals,
             lastValidIndex: -1, // will be set after chart data is built
