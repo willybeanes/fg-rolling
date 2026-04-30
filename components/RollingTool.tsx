@@ -47,19 +47,22 @@ interface GameLog {
 // Colorblind-friendly palette (Wong) — saturated enough for white background
 const PLAYER_COLORS = ['#0072B2', '#E69F00', '#CC79A7', '#009E73', '#56B4E9'];
 
+// weightField: the per-game denominator used to PA/IP-weight the rolling average,
+// matching FanGraphs' approach (games with more PAs or IP count proportionally more).
+// 'PA' = plate appearances (hitters), 'IP' = innings pitched, 'BF' = batters faced.
 const METRICS = [
-  { label: 'wOBA', field: 'wOBA', category: 'hit', isPercent: false, decimals: 3, avg: 0.312 },
-  { label: 'wRC+', field: 'wRC+', category: 'hit', isPercent: false, decimals: 0, avg: 100 },
-  { label: 'OBP', field: 'OBP', category: 'hit', isPercent: false, decimals: 3, avg: 0.319 },
-  { label: 'SLG', field: 'SLG', category: 'hit', isPercent: false, decimals: 3, avg: 0.411 },
-  { label: 'BABIP', field: 'BABIP', category: 'hit', isPercent: false, decimals: 3, avg: 0.296 },
-  { label: 'K%', field: 'K%', category: 'both', isPercent: true, decimals: 1, avg: 0.225 },
-  { label: 'BB%', field: 'BB%', category: 'both', isPercent: true, decimals: 1, avg: 0.085 },
-  { label: 'ERA', field: 'ERA', category: 'pit', isPercent: false, decimals: 2, avg: 4.2 },
-  { label: 'FIP', field: 'FIP', category: 'pit', isPercent: false, decimals: 2, avg: 4.1 },
-  { label: 'xFIP', field: 'xFIP', category: 'pit', isPercent: false, decimals: 2, avg: 4.1 },
-  { label: 'WHIP', field: 'WHIP', category: 'pit', isPercent: false, decimals: 2, avg: 1.28 },
-  { label: 'K-BB%', field: 'K-BB%', category: 'pit', isPercent: true, decimals: 1, avg: 0.145 },
+  { label: 'wOBA',  field: 'wOBA',  category: 'hit',  isPercent: false, decimals: 3, avg: 0.312, weightField: 'PA' },
+  { label: 'wRC+',  field: 'wRC+',  category: 'hit',  isPercent: false, decimals: 0, avg: 100,   weightField: 'PA' },
+  { label: 'OBP',   field: 'OBP',   category: 'hit',  isPercent: false, decimals: 3, avg: 0.319, weightField: 'PA' },
+  { label: 'SLG',   field: 'SLG',   category: 'hit',  isPercent: false, decimals: 3, avg: 0.411, weightField: 'PA' },
+  { label: 'BABIP', field: 'BABIP', category: 'hit',  isPercent: false, decimals: 3, avg: 0.296, weightField: 'PA' },
+  { label: 'K%',    field: 'K%',    category: 'both', isPercent: true,  decimals: 1, avg: 0.225, weightField: 'PA' },
+  { label: 'BB%',   field: 'BB%',   category: 'both', isPercent: true,  decimals: 1, avg: 0.085, weightField: 'PA' },
+  { label: 'ERA',   field: 'ERA',   category: 'pit',  isPercent: false, decimals: 2, avg: 4.2,   weightField: 'IP' },
+  { label: 'FIP',   field: 'FIP',   category: 'pit',  isPercent: false, decimals: 2, avg: 4.1,   weightField: 'IP' },
+  { label: 'xFIP',  field: 'xFIP',  category: 'pit',  isPercent: false, decimals: 2, avg: 4.1,   weightField: 'IP' },
+  { label: 'WHIP',  field: 'WHIP',  category: 'pit',  isPercent: false, decimals: 2, avg: 1.28,  weightField: 'IP' },
+  { label: 'K-BB%', field: 'K-BB%', category: 'pit',  isPercent: true,  decimals: 1, avg: 0.145, weightField: 'BF' },
 ] as const;
 
 type MetricLabel = typeof METRICS[number]['label'];
@@ -80,32 +83,45 @@ function parseVal(raw: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
-// Returns rolling averages AND the game index where each window starts.
-// Walks backwards from each game collecting up to `window` non-null values,
-// so null games (0 PA, defensive sub, etc.) don't consume a window slot —
-// matching FanGraphs' behaviour.
+// Parse innings-pitched in baseball notation ("5.2" = 5⅔ innings = 5.667)
+function parseIP(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '' || raw === '-') return null;
+  const n = parseFloat(String(raw));
+  if (isNaN(n)) return null;
+  const whole = Math.floor(n);
+  const outs = Math.round((n - whole) * 10); // 0, 1, or 2
+  return whole + outs / 3;
+}
+
+// PA/IP-weighted rolling average matching FanGraphs' approach.
+// Walks backwards collecting up to `window` games that have both a valid
+// metric value AND a positive weight (PA or IP > 0). Returns rolling values
+// and the game index where each window starts (for tooltip date ranges).
 function computeRolling(
   vals: (number | null)[],
+  weights: (number | null)[],  // PA, IP, or BF per game
   window: number,
 ): { rolling: (number | null)[]; windowStarts: number[] } {
   const rolling: (number | null)[] = [];
   const windowStarts: number[] = [];
 
   for (let i = 0; i < vals.length; i++) {
-    const collected: number[] = [];
-    let startIdx = i;
-    for (let j = i; j >= 0 && collected.length < window; j--) {
+    let sumVW = 0, sumW = 0, count = 0, startIdx = i;
+    for (let j = i; j >= 0 && count < window; j--) {
       const v = vals[j];
-      if (v !== null && v !== undefined) {
-        collected.push(v);
+      const w = weights[j];
+      if (v !== null && v !== undefined && w !== null && w !== undefined && w > 0) {
+        sumVW += v * w;
+        sumW  += w;
+        count++;
         startIdx = j;
       }
     }
-    if (collected.length === 0) {
+    if (count === 0) {
       rolling.push(null);
       windowStarts.push(i);
     } else {
-      rolling.push(collected.reduce((a, b) => a + b, 0) / collected.length);
+      rolling.push(sumVW / sumW);
       windowStarts.push(startIdx);
     }
   }
@@ -553,9 +569,14 @@ export default function RollingTool() {
           }
 
           const rawVals = games.map(g => parseVal(g[mc.field]));
+          // Weights: PA for hitters, IP for pitcher counting stats, BF for pitcher rate stats
+          const wf = mc.weightField;
+          const rawWeights = games.map(g =>
+            wf === 'IP' ? parseIP(g[wf]) : parseVal(g[wf])
+          );
           // Strip HTML from FanGraphs date strings (<a href="...">2026-04-28</a>)
           const dates = games.map(g => stripHtml(String(g.Date ?? g.date ?? '')));
-          const { rolling, windowStarts } = computeRolling(rawVals, rollingWindow);
+          const { rolling, windowStarts } = computeRolling(rawVals, rawWeights, rollingWindow);
 
           return {
             ...player,
