@@ -108,6 +108,62 @@ function headshotUrl(mlbamid: number | null): string | null {
   return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${mlbamid}/headshot/67/current`;
 }
 
+// ─── URL state helpers ────────────────────────────────────────────────────────
+
+function decodePlayerParam(s: string, color: string): SelectedPlayer | null {
+  // Format: "{fgId}|{mlbamid}|{searchType}|{encodedName}"
+  const parts = s.split('|');
+  if (parts.length < 4) return null;
+  const [playerid, mlbamidStr, searchType, encodedName] = parts;
+  if (!playerid || (searchType !== 'h' && searchType !== 'p')) return null;
+  const mlbamid = mlbamidStr ? parseInt(mlbamidStr) || null : null;
+  const name = decodeURIComponent(encodedName);
+  return {
+    playerid,
+    name,
+    mlbamid,
+    gameLogType: searchType === 'p' ? 1 : 0,
+    searchType,
+    team: '',
+    pos: '',
+    color,
+    rolling: [],
+    gameDates: [],
+    gameVals: [],
+    lastValidIndex: -1,
+    totalGames: 0,
+    headshotUrl: headshotUrl(mlbamid),
+  };
+}
+
+function parseUrlState() {
+  if (typeof window === 'undefined') return null;
+  const p = new URLSearchParams(window.location.search);
+
+  const tab = p.get('tab');
+  const playerType: 'hit' | 'pit' = tab === 'pit' ? 'pit' : 'hit';
+
+  const metricParam = p.get('metric') as MetricLabel | null;
+  const metric: MetricLabel = metricParam && METRICS.find(m => m.label === metricParam)
+    ? metricParam
+    : playerType === 'hit' ? 'wOBA' : 'ERA';
+
+  const windowParam = parseInt(p.get('window') ?? '');
+  const rollingWindow: number = (WINDOWS as readonly number[]).includes(windowParam) ? windowParam : 15;
+
+  const seasonParam = parseInt(p.get('season') ?? '');
+  const season: number = (SEASONS as readonly number[]).includes(seasonParam) ? seasonParam : 2026;
+
+  const players: SelectedPlayer[] = [];
+  for (const encoded of p.getAll('p').slice(0, 5)) {
+    const color = PLAYER_COLORS[players.length % PLAYER_COLORS.length];
+    const player = decodePlayerParam(encoded, color);
+    if (player) players.push(player);
+  }
+
+  return { playerType, metric, rollingWindow, season, players };
+}
+
 // ─── Player Search Component ──────────────────────────────────────────────────
 
 function PlayerSearch({
@@ -327,17 +383,35 @@ function ChartLegend({ players }: { players: SelectedPlayer[] }) {
 // ─── Main Tool ────────────────────────────────────────────────────────────────
 
 export default function RollingTool() {
-  const [playerType, setPlayerType] = useState<'hit' | 'pit'>('hit');
-  const [selectedPlayers, setSelectedPlayers] = useState<SelectedPlayer[]>([]);
-  const [metric, setMetric] = useState<MetricLabel>('wOBA');
-  const [window, setWindow] = useState<number>(15);
-  const [season, setSeason] = useState<number>(2026);
+  // Parse URL state once (before first render) so lazy initialisers can use it
+  const urlStateRef = useRef<ReturnType<typeof parseUrlState>>(null);
+  if (!urlStateRef.current) urlStateRef.current = parseUrlState();
+  const urlState = urlStateRef.current;
+
+  const [playerType, setPlayerType] = useState<'hit' | 'pit'>(urlState?.playerType ?? 'hit');
+  const colorIndex = useRef(urlState?.players.length ?? 0);
+  const [selectedPlayers, setSelectedPlayers] = useState<SelectedPlayer[]>(urlState?.players ?? []);
+  const [metric, setMetric] = useState<MetricLabel>(urlState?.metric ?? 'wOBA');
+  const [rollingWindow, setRollingWindow] = useState<number>(urlState?.rollingWindow ?? 15);
+  const [season, setSeason] = useState<number>(urlState?.season ?? 2026);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chartData, setChartData] = useState<Record<string, unknown>[]>([]);
   const [plotPlayers, setPlotPlayers] = useState<SelectedPlayer[]>([]);
-  const [plotMetric, setPlotMetric] = useState<typeof METRICS[number]>(getMetric('wOBA'));
-  const colorIndex = useRef(0);
+  const [plotMetric, setPlotMetric] = useState<typeof METRICS[number]>(getMetric(urlState?.metric ?? 'wOBA'));
+
+  // ── URL sync: update address bar whenever shareable state changes ──────────
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set('tab', playerType);
+    params.set('metric', metric);
+    params.set('window', String(rollingWindow));
+    params.set('season', String(season));
+    for (const p of selectedPlayers) {
+      params.append('p', `${p.playerid}|${p.mlbamid ?? ''}|${p.searchType}|${encodeURIComponent(p.name)}`);
+    }
+    window.history.replaceState(null, '', `?${params.toString()}`);
+  }, [playerType, metric, rollingWindow, season, selectedPlayers]);
 
   // Metrics available for the active tab
   const tabMetrics = METRICS.filter(m => m.category !== (playerType === 'hit' ? 'pit' : 'hit'));
@@ -418,7 +492,7 @@ export default function RollingTool() {
           const rawVals = games.map(g => parseVal(g[mc.field]));
           // Strip HTML from FanGraphs date strings (<a href="...">2026-04-28</a>)
           const dates = games.map(g => stripHtml(String(g.Date ?? g.date ?? '')));
-          const rolling = computeRolling(rawVals, window);
+          const rolling = computeRolling(rawVals, rollingWindow);
           const lastIdx = [...rolling].reverse().findIndex(v => v !== null);
           const lastValidIndex = lastIdx === -1 ? -1 : rolling.length - 1 - lastIdx;
 
@@ -455,9 +529,19 @@ export default function RollingTool() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPlayers, metric, window, season]);
+  }, [selectedPlayers, metric, rollingWindow, season]);
 
-  const chartTitle = `${window}-Game Rolling ${metric} — ${season}`;
+  // Auto-plot on mount if players were restored from URL
+  const didAutoPlot = useRef(false);
+  useEffect(() => {
+    if (!didAutoPlot.current && selectedPlayers.length > 0) {
+      didAutoPlot.current = true;
+      plot();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plot]);
+
+  const chartTitle = `${rollingWindow}-Game Rolling ${metric} — ${season}`;
 
   // Y-axis domain with padding
   const yVals = chartData.flatMap(d =>
@@ -538,8 +622,8 @@ export default function RollingTool() {
               <label className="control-label">Window</label>
               <select
                 className="select-input"
-                value={window}
-                onChange={e => setWindow(Number(e.target.value))}
+                value={rollingWindow}
+                onChange={e => setRollingWindow(Number(e.target.value))}
               >
                 {WINDOWS.map(w => (
                   <option key={w} value={w}>{w} games</option>
