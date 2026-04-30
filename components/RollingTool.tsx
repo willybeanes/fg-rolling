@@ -63,7 +63,8 @@ const METRICS = [
 
 type MetricLabel = typeof METRICS[number]['label'];
 
-const WINDOWS = [7, 10, 14, 15, 21, 30] as const;
+const WINDOW_MIN = 2;
+const WINDOW_MAX = 500;
 const SEASONS = [2026, 2025, 2024, 2023] as const;
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
@@ -177,7 +178,7 @@ function parseUrlState() {
     : playerType === 'hit' ? 'wOBA' : 'ERA';
 
   const windowParam = parseInt(p.get('window') ?? '');
-  const rollingWindow: number = (WINDOWS as readonly number[]).includes(windowParam) ? windowParam : 15;
+  const rollingWindow: number = (windowParam >= WINDOW_MIN && windowParam <= WINDOW_MAX) ? windowParam : 15;
 
   const seasonParam = parseInt(p.get('season') ?? '');
   const season: number = (SEASONS as readonly number[]).includes(seasonParam) ? seasonParam : 2026;
@@ -606,7 +607,10 @@ export default function RollingTool() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plot]);
 
-  const chartTitle = `${rollingWindow}-Game Rolling ${metric} — ${season}`;
+  const isCumulative = plotPlayers.length > 0 && plotPlayers.every(p => rollingWindow > p.totalGames);
+  const chartTitle = isCumulative
+    ? `Cumulative ${plotMetric.label} — ${season}`
+    : `${rollingWindow}-Game Rolling ${plotMetric.label} — ${season}`;
 
   // Y-axis domain with padding
   const yVals = chartData.flatMap(d =>
@@ -684,16 +688,23 @@ export default function RollingTool() {
 
             {/* Window */}
             <div className="control-group">
-              <label className="control-label">Window</label>
-              <select
+              <label className="control-label">Window (games)</label>
+              <input
+                type="number"
                 className="select-input"
+                min={WINDOW_MIN}
+                max={WINDOW_MAX}
                 value={rollingWindow}
-                onChange={e => setRollingWindow(Number(e.target.value))}
-              >
-                {WINDOWS.map(w => (
-                  <option key={w} value={w}>{w} games</option>
-                ))}
-              </select>
+                onChange={e => {
+                  const v = parseInt(e.target.value);
+                  if (!isNaN(v)) setRollingWindow(Math.min(WINDOW_MAX, Math.max(WINDOW_MIN, v)));
+                }}
+                onBlur={e => {
+                  const v = parseInt(e.target.value);
+                  setRollingWindow(isNaN(v) ? 15 : Math.min(WINDOW_MAX, Math.max(WINDOW_MIN, v)));
+                }}
+                style={{ width: 72 }}
+              />
             </div>
 
             {/* Season */}
