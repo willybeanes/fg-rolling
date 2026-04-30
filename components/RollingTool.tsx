@@ -354,12 +354,14 @@ function CustomTooltip({
   label,
   players,
   metric,
+  rollingWindow,
 }: {
   active?: boolean;
   payload?: Array<{ color: string; value: number | null; dataKey: string }>;
   label?: string;
   players: SelectedPlayer[];
   metric: typeof METRICS[number];
+  rollingWindow: number;
 }) {
   if (!active || !payload?.length) return null;
 
@@ -369,17 +371,22 @@ function CustomTooltip({
       {payload.map(entry => {
         const player = players.find(p => `${p.playerid}-${p.searchType}` === entry.dataKey);
         if (!player || entry.value === null || entry.value === undefined) return null;
-        // Look up the raw value for this specific date
         const gameIdx = player.gameDates.indexOf(String(label));
-        const rawVal = gameIdx !== -1 ? player.gameVals[gameIdx] : null;
+        const windowStartIdx = Math.max(0, gameIdx - rollingWindow + 1);
+        const windowStartDate = gameIdx !== -1 ? player.gameDates[windowStartIdx] : null;
+        const windowEndDate = String(label);
         return (
           <div key={entry.dataKey} className="tooltip-row">
             <span className="tooltip-dot" style={{ background: entry.color }} />
             <span className="tooltip-name">{player.name}</span>
             <div className="tooltip-vals">
               <span className="tooltip-rolling">{formatVal(entry.value, metric)}</span>
-              {rawVal !== null && rawVal !== undefined && (
-                <span className="tooltip-raw">({formatVal(rawVal, metric)} that game)</span>
+              {windowStartDate && (
+                <span className="tooltip-raw">
+                  {windowStartDate === windowEndDate
+                    ? formatDate(windowStartDate)
+                    : `${formatDate(windowStartDate)} – ${formatDate(windowEndDate)}`}
+                </span>
               )}
             </div>
           </div>
@@ -777,6 +784,7 @@ export default function RollingTool() {
                         <CustomTooltip
                           players={plotPlayers}
                           metric={plotMetric}
+                          rollingWindow={rollingWindow}
                         />
                       }
                       cursor={{ stroke: 'rgba(0,0,0,0.12)', strokeWidth: 1 }}
