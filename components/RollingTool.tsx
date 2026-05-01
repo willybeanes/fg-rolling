@@ -851,14 +851,38 @@ export default function RollingTool() {
         return point;
       });
 
-      // lastValidIndex = chart index of each player's last *actual* game (for headshot dot)
-      const enrichedFinal = enriched.map((p, pi) => {
+      // Compute each player's last actual game chart index, then stagger the
+      // headshot dots so they don't all pile up at the same x position.
+      // Players are sorted most-recent-first and each gets their dot placed
+      // DOT_GAP date slots earlier than the previous, walking back to the
+      // nearest game date if the target slot was a rest/travel day.
+      const DOT_GAP = 3;
+
+      const withLastIdx = enriched.map((p, pi) => {
         let lastValidIndex = -1;
         allDates.forEach((date, i) => {
           if (dateMaps[pi].has(date)) lastValidIndex = i;
         });
-        return { ...p, lastValidIndex };
+        return { p, pi, lastValidIndex };
       });
+
+      // Sort by lastValidIndex desc to assign stagger ranks
+      const sortedForDots = [...withLastIdx].sort((a, b) => b.lastValidIndex - a.lastValidIndex);
+      const globalMaxIdx = sortedForDots[0]?.lastValidIndex ?? 0;
+
+      const dotIndexMap = new Map<number, number>(); // pi → dot chart index
+      sortedForDots.forEach(({ pi, lastValidIndex }, rank) => {
+        // Each successive player's dot is DOT_GAP slots to the left
+        let target = Math.min(globalMaxIdx - rank * DOT_GAP, lastValidIndex);
+        // Walk back to find nearest actual game date for this player
+        while (target > 0 && !dateMaps[pi].has(allDates[target])) target--;
+        dotIndexMap.set(pi, target >= 0 ? target : lastValidIndex);
+      });
+
+      const enrichedFinal = withLastIdx.map(({ p, pi, lastValidIndex }) => ({
+        ...p,
+        lastValidIndex: dotIndexMap.get(pi) ?? lastValidIndex,
+      }));
 
       setPlotPlayers(enrichedFinal);
       setPlotMetric(mc);
@@ -886,14 +910,27 @@ export default function RollingTool() {
     ? `Cumulative ${plotMetric.label} — ${season}`
     : `${rollingWindow}-Game Rolling ${plotMetric.label} — ${season}`;
 
-  // Y-axis domain with padding
-  const yVals = chartData.flatMap(d =>
+  // Y-axis domain — skip each player's first (rollingWindow - 1) games where
+  // the window is only partially filled and values swing wildly. In cumulative
+  // mode skip a fixed 5 games instead. Fall back to all values if not enough
+  // stable data (very short seasons / tiny samples).
+  const skipGames = isCumulative ? 5 : Math.max(0, rollingWindow - 1);
+  const stableVals: number[] = [];
+  plotPlayers.forEach(p => {
+    p.rolling.forEach((v, i) => {
+      if (i >= skipGames && v !== null && v !== undefined && !isNaN(v as number)) {
+        stableVals.push(v as number);
+      }
+    });
+  });
+  const allVals = chartData.flatMap(d =>
     plotPlayers.map(p => d[`${p.playerid}-${p.searchType}`] as number | undefined)
   ).filter((v): v is number => v !== undefined && !isNaN(v));
 
-  let yMin = Math.min(...yVals);
-  let yMax = Math.max(...yVals);
-  if (yVals.length === 0) { yMin = 0; yMax = 1; }
+  const valsForDomain = stableVals.length >= 5 ? stableVals : allVals;
+
+  let yMin = valsForDomain.length ? Math.min(...valsForDomain) : 0;
+  let yMax = valsForDomain.length ? Math.max(...valsForDomain) : 1;
   const yPad = (yMax - yMin) * 0.15 || 0.05;
   const yDomain: [number, number] = [
     parseFloat((yMin - yPad).toFixed(3)),
