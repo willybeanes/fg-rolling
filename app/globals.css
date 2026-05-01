@@ -312,6 +312,7 @@ body {
   height: 22px;
   border-radius: 50%;
   object-fit: cover;
+  object-position: 50% 15%;
   flex-shrink: 0;
 }
 
