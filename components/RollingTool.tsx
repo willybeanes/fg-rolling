@@ -1367,7 +1367,7 @@ export default function RollingTool() {
                       return (
                         <Line
                           key={key}
-                          type="monotone"
+                          type={isCounting ? 'stepAfter' : 'monotone'}
                           dataKey={key}
                           stroke={clr}
                           strokeWidth={2.5}
