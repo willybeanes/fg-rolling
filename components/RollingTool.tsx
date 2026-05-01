@@ -11,6 +11,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
   Legend,
+  Customized,
 } from 'recharts';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -549,6 +550,83 @@ function stackPositions(
   return result;
 }
 
+// ─── Headshot label layer (rendered inside Recharts SVG via <Customized>) ────
+// Recharts injects `offset` (exact plot-area bounds) and `yAxisMap` (with the
+// live D3 scale) so we get pixel-perfect positions without guessing margins.
+interface RechartOffset { top: number; left: number; width: number; height: number }
+interface RechartsAxis  { scale: (v: number) => number }
+
+function HeadshotLayer(props: Record<string, unknown> & {
+  players:    SelectedPlayer[];
+  lineColors: Map<string, string>;
+  lastRow:    Record<string, unknown> | null;
+}) {
+  const { players, lineColors, lastRow } = props;
+  const offset   = props.offset   as RechartOffset | undefined;
+  const yAxisMap = props.yAxisMap as Record<string, RechartsAxis> | undefined;
+  if (!offset || !yAxisMap) return null;
+  const yScale = Object.values(yAxisMap)[0]?.scale;
+  if (!yScale) return null;
+
+  const plotRight = offset.left + offset.width;
+  const plotTop   = offset.top;
+  const plotBot   = offset.top + offset.height;
+
+  // Place headshots just past the y-axis, inside the CM.right margin
+  const hsCx = plotRight + YAXIS_W + HS_R + 4;
+
+  const idealYs = players.map(p => {
+    if (!lastRow) return (plotTop + plotBot) / 2;
+    const v = lastRow[`${p.playerid}-${p.searchType}`] as number | undefined;
+    return v !== undefined ? yScale(v) : (plotTop + plotBot) / 2;
+  });
+
+  const stackedCys = stackPositions(
+    idealYs, HS_R * 2 + 6, plotTop + HS_R + 2, plotBot - HS_R - 2,
+  );
+
+  return (
+    <>
+      <defs>
+        {players.map((player, pi) => {
+          const key = `${player.playerid}-${player.searchType}`;
+          return (
+            <clipPath key={key} id={`hs-ov-${key}`}>
+              <circle cx={hsCx} cy={stackedCys[pi]} r={HS_R} />
+            </clipPath>
+          );
+        })}
+      </defs>
+      {players.map((player, pi) => {
+        const key   = `${player.playerid}-${player.searchType}`;
+        const clr   = lineColors.get(key) ?? player.color;
+        const idealY = idealYs[pi];
+        const cy     = stackedCys[pi];
+        return (
+          <g key={key}>
+            <line
+              x1={plotRight} y1={idealY}
+              x2={hsCx - HS_R - 3} y2={cy}
+              stroke={clr} strokeWidth={1.5} strokeOpacity={0.75}
+            />
+            <circle cx={hsCx} cy={cy} r={HS_R + 2} fill="#fff" stroke={clr} strokeWidth={2} />
+            {player.headshotUrl ? (
+              <image
+                href={player.headshotUrl}
+                x={hsCx - HS_R} y={cy - HS_R}
+                width={HS_R * 2} height={HS_R * 2}
+                clipPath={`url(#hs-ov-${key})`}
+              />
+            ) : (
+              <circle cx={hsCx} cy={cy} r={HS_R} fill={clr} />
+            )}
+          </g>
+        );
+      })}
+    </>
+  );
+}
+
 // ─── Custom Tooltip ───────────────────────────────────────────────────────────
 
 function CustomTooltip({
@@ -648,22 +726,6 @@ export default function RollingTool() {
   const [playerPool, setPlayerPool] = useState<FgPlayer[]>([]);
   const [poolLoading, setPoolLoading] = useState(true);
 
-  // ── Chart container size (for headshot overlay positioning) ─────────────
-  // Use a callback ref so the observer attaches whenever the div mounts
-  // (the chart-wrap is conditionally rendered, so useRef+useEffect won't work).
-  const [chartSize, setChartSize] = useState({ width: 0, height: 0 });
-  const chartResizeObs = useRef<ResizeObserver | null>(null);
-  const chartWrapRef = useCallback((node: HTMLDivElement | null) => {
-    if (chartResizeObs.current) { chartResizeObs.current.disconnect(); chartResizeObs.current = null; }
-    if (node) {
-      const obs = new ResizeObserver(([entry]) => {
-        const { width, height } = entry.contentRect;
-        setChartSize({ width, height });
-      });
-      obs.observe(node);
-      chartResizeObs.current = obs;
-    }
-  }, []);
 
   // ── Quick-add by team (hitter tab only) ──────────────────────────────────
   const [quickTeam, setQuickTeam] = useState('');
@@ -937,24 +999,7 @@ export default function RollingTool() {
   const chipColors = effectiveColors(selectedPlayers);
   const lineColors = effectiveColors(plotPlayers);
 
-  // ── Headshot overlay: compute ideal y positions then stack to avoid overlap ─
-  const hsPlotRight = chartSize.width  > 0 ? chartSize.width  - CM.right - YAXIS_W : 0;
-  const hsPlotTop   = CM.top;
-  const hsPlotBot   = chartSize.height > 0 ? chartSize.height - CM.bottom : 0;
-  const hsPlotH     = hsPlotBot - hsPlotTop;
-  // Headshot centers: in the right margin (CM.right), just past the y-axis
-  const hsCx = chartSize.width > 0 ? chartSize.width - CM.right + HS_R + 6 : 0;
-
   const lastRow = chartData.length > 0 ? chartData[chartData.length - 1] : null;
-  const hsIdealYs = plotPlayers.map(p => {
-    if (!lastRow || hsPlotH <= 0) return hsPlotTop + hsPlotH / 2;
-    const v = lastRow[`${p.playerid}-${p.searchType}`] as number | undefined;
-    if (v === undefined) return hsPlotTop + hsPlotH / 2;
-    return hsPlotTop + hsPlotH * (1 - (v - yDomain[0]) / (yDomain[1] - yDomain[0]));
-  });
-  const hsStackedCys = chartSize.width > 0 && plotPlayers.length > 0
-    ? stackPositions(hsIdealYs, HS_R * 2 + 6, hsPlotTop + HS_R + 2, hsPlotBot - HS_R - 2)
-    : hsIdealYs;
 
   return (
     <div className="tool-root">
@@ -1154,7 +1199,7 @@ export default function RollingTool() {
             <>
               <div className="chart-title">{chartTitle}</div>
               <ChartLegend players={plotPlayers} colors={lineColors} />
-              <div className="chart-wrap" ref={chartWrapRef} style={{ position: 'relative' }}>
+              <div className="chart-wrap">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData} margin={{ top: CM.top, right: CM.right, bottom: CM.bottom, left: CM.left }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#ede9e4" />
@@ -1220,58 +1265,15 @@ export default function RollingTool() {
                         />
                       );
                     })}
+                    {/* Headshot label column — uses Recharts' live y-scale for exact positions */}
+                    <Customized
+                      component={HeadshotLayer}
+                      players={plotPlayers}
+                      lineColors={lineColors}
+                      lastRow={lastRow}
+                    />
                   </LineChart>
                 </ResponsiveContainer>
-
-                {/* Headshot label overlay — rendered on top of the Recharts SVG */}
-                {chartSize.width > 0 && (
-                  <svg
-                    style={{
-                      position: 'absolute', top: 0, left: 0,
-                      width: '100%', height: '100%',
-                      pointerEvents: 'none', overflow: 'visible',
-                    }}
-                  >
-                    <defs>
-                      {plotPlayers.map((player, pi) => {
-                        const key = `${player.playerid}-${player.searchType}`;
-                        return (
-                          <clipPath key={key} id={`hs-ov-${key}`}>
-                            <circle cx={hsCx} cy={hsStackedCys[pi]} r={HS_R} />
-                          </clipPath>
-                        );
-                      })}
-                    </defs>
-                    {plotPlayers.map((player, pi) => {
-                      const key = `${player.playerid}-${player.searchType}`;
-                      const clr = lineColors.get(key) ?? player.color;
-                      const idealY = hsIdealYs[pi];
-                      const cy = hsStackedCys[pi];
-                      return (
-                        <g key={key}>
-                          {/* Leader line from chart right edge at actual value to headshot */}
-                          <line
-                            x1={hsPlotRight} y1={idealY}
-                            x2={hsCx - HS_R - 3} y2={cy}
-                            stroke={clr} strokeWidth={1.5} strokeOpacity={0.75}
-                          />
-                          {/* Headshot circle */}
-                          <circle cx={hsCx} cy={cy} r={HS_R + 2} fill="#fff" stroke={clr} strokeWidth={2} />
-                          {player.headshotUrl ? (
-                            <image
-                              href={player.headshotUrl}
-                              x={hsCx - HS_R} y={cy - HS_R}
-                              width={HS_R * 2} height={HS_R * 2}
-                              clipPath={`url(#hs-ov-${key})`}
-                            />
-                          ) : (
-                            <circle cx={hsCx} cy={cy} r={HS_R} fill={clr} />
-                          )}
-                        </g>
-                      );
-                    })}
-                  </svg>
-                )}
               </div>
             </>
           )}
