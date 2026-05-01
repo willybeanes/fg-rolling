@@ -45,7 +45,10 @@ interface GameLog {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 // Colorblind-friendly palette (Wong) — saturated enough for white background
-const PLAYER_COLORS = ['#0072B2', '#E69F00', '#CC79A7', '#009E73', '#56B4E9'];
+const PLAYER_COLORS = ['#0072B2', '#E69F00', '#CC79A7', '#009E73', '#56B4E9', '#D55E00', '#999999'];
+const MAX_PLAYERS = 7;
+const MAX_QUICK_REGULARS = 7;
+const MAX_QUICK_ROLE = 5;
 
 // MLB team primary colors (chosen for legibility on a light background)
 const TEAM_COLORS: Record<string, string> = {
@@ -318,7 +321,7 @@ function parseUrlState() {
   const season: number = (SEASONS as readonly number[]).includes(seasonParam) ? seasonParam : 2026;
 
   const players: SelectedPlayer[] = [];
-  for (const encoded of p.getAll('p').slice(0, 5)) {
+  for (const encoded of p.getAll('p').slice(0, MAX_PLAYERS)) {
     const color = PLAYER_COLORS[players.length % PLAYER_COLORS.length];
     const player = decodePlayerParam(encoded, color);
     if (player) players.push(player);
@@ -462,7 +465,7 @@ function PlayerSearch({
   }
 
   const placeholder = disabled
-    ? 'Max 5 players'
+    ? `Max ${MAX_PLAYERS} players`
     : poolLoading
       ? 'Loading players…'
       : 'Search player or team…';
@@ -691,7 +694,7 @@ export default function RollingTool() {
   }
 
   function addPlayer(p: FgPlayer) {
-    if (selectedPlayers.length >= 5) return;
+    if (selectedPlayers.length >= MAX_PLAYERS) return;
     const key = `${p.playerid}-${p.searchType}`;
     if (selectedPlayers.some(sp => `${sp.playerid}-${sp.searchType}` === key)) return;
     const color = PLAYER_COLORS[colorIndex.current % PLAYER_COLORS.length];
@@ -741,7 +744,7 @@ export default function RollingTool() {
       setChartData([]);
       setPlotPlayers([]);
       setSelectedPlayers(
-        incoming.slice(0, 5).map((p, i) => ({
+        incoming.slice(0, mode === 'regulars' ? MAX_QUICK_REGULARS : MAX_QUICK_ROLE).map((p, i) => ({
           ...p,
           color: PLAYER_COLORS[i % PLAYER_COLORS.length],
           rolling: [],
@@ -941,7 +944,7 @@ export default function RollingTool() {
               <label className="control-label">Add Player</label>
               <PlayerSearch
                 onSelect={addPlayer}
-                disabled={selectedPlayers.length >= 5}
+                disabled={selectedPlayers.length >= MAX_PLAYERS}
                 playerTypeFilter={playerType === 'hit' ? 'h' : 'p'}
                 playerPool={playerPool}
                 poolLoading={poolLoading}

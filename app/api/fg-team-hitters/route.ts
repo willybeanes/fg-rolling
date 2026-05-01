@@ -106,7 +106,8 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const players = sorted.slice(0, 5).map(r => ({
+    const resultCount = mode === 'regulars' ? 7 : 5;
+    const players = sorted.slice(0, resultCount).map(r => ({
       playerid:   String(r.playerid),
       name:       String(r.PlayerName ?? ''),
       mlbamid:    r.xMLBAMID ? Number(r.xMLBAMID) : null,
