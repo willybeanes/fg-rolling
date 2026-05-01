@@ -649,23 +649,25 @@ export default function RollingTool() {
   const [poolLoading, setPoolLoading] = useState(true);
 
   // ── Chart container size (for headshot overlay positioning) ─────────────
-  const chartWrapRef = useRef<HTMLDivElement>(null);
+  // Use a callback ref so the observer attaches whenever the div mounts
+  // (the chart-wrap is conditionally rendered, so useRef+useEffect won't work).
   const [chartSize, setChartSize] = useState({ width: 0, height: 0 });
+  const chartResizeObs = useRef<ResizeObserver | null>(null);
+  const chartWrapRef = useCallback((node: HTMLDivElement | null) => {
+    if (chartResizeObs.current) { chartResizeObs.current.disconnect(); chartResizeObs.current = null; }
+    if (node) {
+      const obs = new ResizeObserver(([entry]) => {
+        const { width, height } = entry.contentRect;
+        setChartSize({ width, height });
+      });
+      obs.observe(node);
+      chartResizeObs.current = obs;
+    }
+  }, []);
 
   // ── Quick-add by team (hitter tab only) ──────────────────────────────────
   const [quickTeam, setQuickTeam] = useState('');
   const [quickLoading, setQuickLoading] = useState(false);
-
-  useEffect(() => {
-    const el = chartWrapRef.current;
-    if (!el) return;
-    const obs = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setChartSize({ width, height });
-    });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
 
   useEffect(() => {
     setPoolLoading(true);
