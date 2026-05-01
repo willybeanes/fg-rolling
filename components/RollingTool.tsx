@@ -1026,11 +1026,15 @@ export default function RollingTool() {
   }, [plot]);
 
   const isCumulative = plotPlayers.length > 0 && plotPlayers.every(p => rollingWindow > p.totalGames);
+  const singleTeam = plotPlayers.length > 0 && new Set(plotPlayers.map(p => p.team ?? '')).size === 1
+    ? (plotPlayers[0].team ?? '')
+    : '';
+  const teamSuffix = singleTeam ? `${singleTeam} ` : '';
   const chartTitle = isCumulative
-    ? `Cumulative ${plotMetric.label} — ${season}`
+    ? `Cumulative ${plotMetric.label} - ${teamSuffix}${season}`
     : (plotMetric as { isCounting?: boolean }).isCounting
-      ? `${rollingWindow}-Game Rolling ${plotMetric.label} Total — ${season}`
-      : `${rollingWindow}-Game Rolling ${plotMetric.label} — ${season}`;
+      ? `${rollingWindow}-Game Rolling ${plotMetric.label} Total - ${teamSuffix}${season}`
+      : `${rollingWindow}-Game Rolling ${plotMetric.label} - ${teamSuffix}${season}`;
 
   // Zoom state → filtered display data
   const isZoomed = Boolean(zoom.zoomedLeft && zoom.zoomedRight);
