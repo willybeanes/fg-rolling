@@ -272,10 +272,11 @@ function headshotUrl(mlbamid: number | null): string | null {
 // ─── URL state helpers ────────────────────────────────────────────────────────
 
 function decodePlayerParam(s: string, color: string): SelectedPlayer | null {
-  // Format: "{fgId}|{mlbamid}|{searchType}|{encodedName}"
+  // Format: "{fgId}|{mlbamid}|{searchType}|{encodedName}|{team}"
+  // team is optional (old URLs omit it) — falls back to '' which disables team colors
   const parts = s.split('|');
   if (parts.length < 4) return null;
-  const [playerid, mlbamidStr, searchType, encodedName] = parts;
+  const [playerid, mlbamidStr, searchType, encodedName, team] = parts;
   if (!playerid || (searchType !== 'h' && searchType !== 'p')) return null;
   const mlbamid = mlbamidStr ? parseInt(mlbamidStr) || null : null;
   const name = decodeURIComponent(encodedName);
@@ -285,7 +286,7 @@ function decodePlayerParam(s: string, color: string): SelectedPlayer | null {
     mlbamid,
     gameLogType: searchType === 'p' ? 1 : 0,
     searchType,
-    team: '',
+    team: team ?? '',
     pos: '',
     color,
     rolling: [],
@@ -667,7 +668,7 @@ export default function RollingTool() {
     params.set('window', String(rollingWindow));
     params.set('season', String(season));
     for (const p of selectedPlayers) {
-      params.append('p', `${p.playerid}|${p.mlbamid ?? ''}|${p.searchType}|${encodeURIComponent(p.name)}`);
+      params.append('p', `${p.playerid}|${p.mlbamid ?? ''}|${p.searchType}|${encodeURIComponent(p.name)}|${p.team ?? ''}`);
     }
     window.history.replaceState(null, '', `?${params.toString()}`);
   }, [playerType, metric, rollingWindow, season, selectedPlayers]);
