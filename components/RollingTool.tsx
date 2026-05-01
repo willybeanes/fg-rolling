@@ -125,6 +125,11 @@ const WINDOW_MIN = 2;
 const WINDOW_MAX = 500;
 const SEASONS = [2026, 2025, 2024, 2023] as const;
 
+// ─── Chart layout: right-side y-axis + headshot label column ─────────────────
+const CM      = { top: 20, right: 58, bottom: 8, left: 8 } as const;
+const YAXIS_W = 48;  // right-side y-axis width (px)
+const HS_R    = 17;  // headshot circle radius (px)
+
 const MLB_TEAM_LIST = [
   { abbr: 'ARI', name: 'Arizona Diamondbacks' },
   { abbr: 'ATL', name: 'Atlanta Braves' },
@@ -511,44 +516,37 @@ function PlayerSearch({
   );
 }
 
-// ─── Custom Dot (headshot at last rolling point) ──────────────────────────────
-
-function makeHeadshotDot(
-  playerId: string,
-  headshotSrc: string | null,
-  lastValidIndex: number,
-  color: string,
-) {
-  const Dot = (props: Record<string, unknown>) => {
-    const { cx, cy, index } = props as { cx: number; cy: number; index: number };
-    if (index !== lastValidIndex || cx === undefined || cy === undefined) return null;
-    const r = 17;
-    const clipId = `clip-hs-${playerId}`;
-    return (
-      <g>
-        <defs>
-          <clipPath id={clipId}>
-            <circle cx={cx} cy={cy} r={r} />
-          </clipPath>
-        </defs>
-        <circle cx={cx} cy={cy} r={r + 2} fill="#fff" stroke={color} strokeWidth={2} />
-        {headshotSrc ? (
-          <image
-            href={headshotSrc}
-            x={cx - r}
-            y={cy - r}
-            width={r * 2}
-            height={r * 2}
-            clipPath={`url(#${clipId})`}
-          />
-        ) : (
-          <circle cx={cx} cy={cy} r={r} fill={color} />
-        )}
-      </g>
-    );
-  };
-  Dot.displayName = 'HeadshotDot';
-  return Dot;
+// ─── Right-side headshot label column: stack positions to avoid overlap ──────
+// Sorts items by idealY, sweeps down pushing overlaps apart, then sweeps back
+// up if the last item overflows the bottom bound. Restores original order.
+function stackPositions(
+  idealYs: number[],
+  minGap: number,
+  topBound: number,
+  bottomBound: number,
+): number[] {
+  const n = idealYs.length;
+  if (n === 0) return [];
+  const order = Array.from({ length: n }, (_, i) => i)
+    .sort((a, b) => idealYs[a] - idealYs[b]);
+  const cy = order.map(i => idealYs[i]);
+  // Sweep down
+  for (let j = 1; j < cy.length; j++) {
+    if (cy[j] - cy[j - 1] < minGap) cy[j] = cy[j - 1] + minGap;
+  }
+  // If last overflows, sweep back up from the bottom
+  if (cy[cy.length - 1] > bottomBound) {
+    cy[cy.length - 1] = bottomBound;
+    for (let j = cy.length - 2; j >= 0; j--) {
+      if (cy[j + 1] - cy[j] < minGap) cy[j] = cy[j + 1] - minGap;
+    }
+  }
+  for (let j = 0; j < cy.length; j++) {
+    cy[j] = Math.max(topBound, Math.min(bottomBound, cy[j]));
+  }
+  const result = new Array(n);
+  order.forEach((orig, sorted) => { result[orig] = cy[sorted]; });
+  return result;
 }
 
 // ─── Custom Tooltip ───────────────────────────────────────────────────────────
@@ -650,9 +648,24 @@ export default function RollingTool() {
   const [playerPool, setPlayerPool] = useState<FgPlayer[]>([]);
   const [poolLoading, setPoolLoading] = useState(true);
 
+  // ── Chart container size (for headshot overlay positioning) ─────────────
+  const chartWrapRef = useRef<HTMLDivElement>(null);
+  const [chartSize, setChartSize] = useState({ width: 0, height: 0 });
+
   // ── Quick-add by team (hitter tab only) ──────────────────────────────────
   const [quickTeam, setQuickTeam] = useState('');
   const [quickLoading, setQuickLoading] = useState(false);
+
+  useEffect(() => {
+    const el = chartWrapRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setChartSize({ width, height });
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   useEffect(() => {
     setPoolLoading(true);
@@ -851,38 +864,15 @@ export default function RollingTool() {
         return point;
       });
 
-      // Compute each player's last actual game chart index, then stagger the
-      // headshot dots so they don't all pile up at the same x position.
-      // Players are sorted most-recent-first and each gets their dot placed
-      // DOT_GAP date slots earlier than the previous, walking back to the
-      // nearest game date if the target slot was a rest/travel day.
-      const DOT_GAP = 3;
-
-      const withLastIdx = enriched.map((p, pi) => {
+      // Record each player's last actual game index (used for tooltip and
+      // overlay label positioning — headshot stacking is handled at render time).
+      const enrichedFinal = enriched.map((p, pi) => {
         let lastValidIndex = -1;
         allDates.forEach((date, i) => {
           if (dateMaps[pi].has(date)) lastValidIndex = i;
         });
-        return { p, pi, lastValidIndex };
+        return { ...p, lastValidIndex };
       });
-
-      // Sort by lastValidIndex desc to assign stagger ranks
-      const sortedForDots = [...withLastIdx].sort((a, b) => b.lastValidIndex - a.lastValidIndex);
-      const globalMaxIdx = sortedForDots[0]?.lastValidIndex ?? 0;
-
-      const dotIndexMap = new Map<number, number>(); // pi → dot chart index
-      sortedForDots.forEach(({ pi, lastValidIndex }, rank) => {
-        // Each successive player's dot is DOT_GAP slots to the left
-        let target = Math.min(globalMaxIdx - rank * DOT_GAP, lastValidIndex);
-        // Walk back to find nearest actual game date for this player
-        while (target > 0 && !dateMaps[pi].has(allDates[target])) target--;
-        dotIndexMap.set(pi, target >= 0 ? target : lastValidIndex);
-      });
-
-      const enrichedFinal = withLastIdx.map(({ p, pi, lastValidIndex }) => ({
-        ...p,
-        lastValidIndex: dotIndexMap.get(pi) ?? lastValidIndex,
-      }));
 
       setPlotPlayers(enrichedFinal);
       setPlotMetric(mc);
@@ -942,8 +932,27 @@ export default function RollingTool() {
 
   // Compute display colors: team colors when every player is on a different
   // known team, otherwise fall back to the assigned palette colors.
-  const chipColors  = effectiveColors(selectedPlayers);
-  const lineColors  = effectiveColors(plotPlayers);
+  const chipColors = effectiveColors(selectedPlayers);
+  const lineColors = effectiveColors(plotPlayers);
+
+  // ── Headshot overlay: compute ideal y positions then stack to avoid overlap ─
+  const hsPlotRight = chartSize.width  > 0 ? chartSize.width  - CM.right - YAXIS_W : 0;
+  const hsPlotTop   = CM.top;
+  const hsPlotBot   = chartSize.height > 0 ? chartSize.height - CM.bottom : 0;
+  const hsPlotH     = hsPlotBot - hsPlotTop;
+  // Headshot centers: in the right margin (CM.right), just past the y-axis
+  const hsCx = chartSize.width > 0 ? chartSize.width - CM.right + HS_R + 6 : 0;
+
+  const lastRow = chartData.length > 0 ? chartData[chartData.length - 1] : null;
+  const hsIdealYs = plotPlayers.map(p => {
+    if (!lastRow || hsPlotH <= 0) return hsPlotTop + hsPlotH / 2;
+    const v = lastRow[`${p.playerid}-${p.searchType}`] as number | undefined;
+    if (v === undefined) return hsPlotTop + hsPlotH / 2;
+    return hsPlotTop + hsPlotH * (1 - (v - yDomain[0]) / (yDomain[1] - yDomain[0]));
+  });
+  const hsStackedCys = chartSize.width > 0 && plotPlayers.length > 0
+    ? stackPositions(hsIdealYs, HS_R * 2 + 6, hsPlotTop + HS_R + 2, hsPlotBot - HS_R - 2)
+    : hsIdealYs;
 
   return (
     <div className="tool-root">
@@ -1143,9 +1152,9 @@ export default function RollingTool() {
             <>
               <div className="chart-title">{chartTitle}</div>
               <ChartLegend players={plotPlayers} colors={lineColors} />
-              <div className="chart-wrap">
+              <div className="chart-wrap" ref={chartWrapRef} style={{ position: 'relative' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 16, right: 28, bottom: 4, left: 0 }}>
+                  <LineChart data={chartData} margin={{ top: CM.top, right: CM.right, bottom: CM.bottom, left: CM.left }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#ede9e4" />
                     <XAxis
                       dataKey="date"
@@ -1156,6 +1165,8 @@ export default function RollingTool() {
                       stroke="#d8d5d0"
                     />
                     <YAxis
+                      orientation="right"
+                      width={YAXIS_W}
                       domain={yDomain}
                       tickFormatter={v => {
                         if (plotMetric.isPercent) return `${(v * 100).toFixed(plotMetric.decimals)}%`;
@@ -1163,7 +1174,6 @@ export default function RollingTool() {
                       }}
                       tick={{ fill: '#999', fontSize: 11 }}
                       stroke="#d8d5d0"
-                      width={60}
                     />
                     <Tooltip
                       content={
@@ -1187,7 +1197,7 @@ export default function RollingTool() {
                             : plotMetric.avg.toFixed(plotMetric.decimals)}`,
                           fill: '#999',
                           fontSize: 10,
-                          position: 'insideTopRight',
+                          position: 'insideTopLeft',
                         }}
                       />
                     )}
@@ -1201,7 +1211,7 @@ export default function RollingTool() {
                           dataKey={key}
                           stroke={clr}
                           strokeWidth={2.5}
-                          dot={makeHeadshotDot(key, player.headshotUrl, player.lastValidIndex, clr)}
+                          dot={false}
                           activeDot={{ r: 4, fill: clr, stroke: '#fff', strokeWidth: 2 }}
                           connectNulls={false}
                           isAnimationActive={false}
@@ -1210,6 +1220,56 @@ export default function RollingTool() {
                     })}
                   </LineChart>
                 </ResponsiveContainer>
+
+                {/* Headshot label overlay — rendered on top of the Recharts SVG */}
+                {chartSize.width > 0 && (
+                  <svg
+                    style={{
+                      position: 'absolute', top: 0, left: 0,
+                      width: '100%', height: '100%',
+                      pointerEvents: 'none', overflow: 'visible',
+                    }}
+                  >
+                    <defs>
+                      {plotPlayers.map((player, pi) => {
+                        const key = `${player.playerid}-${player.searchType}`;
+                        return (
+                          <clipPath key={key} id={`hs-ov-${key}`}>
+                            <circle cx={hsCx} cy={hsStackedCys[pi]} r={HS_R} />
+                          </clipPath>
+                        );
+                      })}
+                    </defs>
+                    {plotPlayers.map((player, pi) => {
+                      const key = `${player.playerid}-${player.searchType}`;
+                      const clr = lineColors.get(key) ?? player.color;
+                      const idealY = hsIdealYs[pi];
+                      const cy = hsStackedCys[pi];
+                      return (
+                        <g key={key}>
+                          {/* Leader line from chart right edge at actual value to headshot */}
+                          <line
+                            x1={hsPlotRight} y1={idealY}
+                            x2={hsCx - HS_R - 3} y2={cy}
+                            stroke={clr} strokeWidth={1.5} strokeOpacity={0.75}
+                          />
+                          {/* Headshot circle */}
+                          <circle cx={hsCx} cy={cy} r={HS_R + 2} fill="#fff" stroke={clr} strokeWidth={2} />
+                          {player.headshotUrl ? (
+                            <image
+                              href={player.headshotUrl}
+                              x={hsCx - HS_R} y={cy - HS_R}
+                              width={HS_R * 2} height={HS_R * 2}
+                              clipPath={`url(#hs-ov-${key})`}
+                            />
+                          ) : (
+                            <circle cx={hsCx} cy={cy} r={HS_R} fill={clr} />
+                          )}
+                        </g>
+                      );
+                    })}
+                  </svg>
+                )}
               </div>
             </>
           )}
