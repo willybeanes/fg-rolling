@@ -181,6 +181,11 @@ function parseIP(raw: unknown): number | null {
 // Walks backwards collecting up to `window` games that have both a valid
 // metric value AND a positive weight (PA or IP > 0). Returns rolling values
 // and the game index where each window starts (for tooltip date ranges).
+//
+// FanGraphs counts EVERY game appearance (including 0-PA pinch-runner games)
+// as a slot in the N-game window. A 0-PA game consumes a slot but contributes
+// nothing to the weighted sum. We match that behaviour: count a game whenever
+// its weight is defined (even w=0), only add to sum when w > 0.
 function computeRolling(
   vals: (number | null)[],
   weights: (number | null)[],  // PA, IP, or BF per game
@@ -192,16 +197,20 @@ function computeRolling(
   for (let i = 0; i < vals.length; i++) {
     let sumVW = 0, sumW = 0, count = 0, startIdx = i;
     for (let j = i; j >= 0 && count < window; j--) {
-      const v = vals[j];
       const w = weights[j];
-      if (v !== null && v !== undefined && w !== null && w !== undefined && w > 0) {
-        sumVW += v * w;
-        sumW  += w;
+      // A game with a defined weight (even 0 PA) counts as a window slot
+      if (w !== null && w !== undefined) {
         count++;
         startIdx = j;
+        const v = vals[j];
+        // Only accumulate into the weighted sum when there was real activity
+        if (w > 0 && v !== null && v !== undefined) {
+          sumVW += v * w;
+          sumW  += w;
+        }
       }
     }
-    if (count === 0) {
+    if (sumW === 0) {
       rolling.push(null);
       windowStarts.push(i);
     } else {
