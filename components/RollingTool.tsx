@@ -617,8 +617,8 @@ function HeadshotLayer({ players, lineColors, lastRow }: {
                 {/* Face-cropped headshot: preserveAspectRatio mirrors object-fit:cover + object-position:50% 0% */}
                 <image
                   href={player.headshotUrl}
-                  x={hsCx - HS_R} y={cy - HS_R}
-                  width={HS_R * 2} height={HS_R * 2}
+                  x={hsCx - HS_R} y={cy - HS_R - 3}
+                  width={HS_R * 2} height={HS_R * 2 + 3}
                   preserveAspectRatio="xMidYMin slice"
                   clipPath={`url(#hs-ov-${key})`}
                 />
