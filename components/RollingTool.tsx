@@ -910,27 +910,28 @@ export default function RollingTool() {
     ? `Cumulative ${plotMetric.label} — ${season}`
     : `${rollingWindow}-Game Rolling ${plotMetric.label} — ${season}`;
 
-  // Y-axis domain — skip each player's first (rollingWindow - 1) games where
-  // the window is only partially filled and values swing wildly. In cumulative
-  // mode skip a fixed 5 games instead. Fall back to all values if not enough
-  // stable data (very short seasons / tiny samples).
-  const skipGames = isCumulative ? 5 : Math.max(0, rollingWindow - 1);
-  const stableVals: number[] = [];
-  plotPlayers.forEach(p => {
-    p.rolling.forEach((v, i) => {
-      if (i >= skipGames && v !== null && v !== undefined && !isNaN(v as number)) {
-        stableVals.push(v as number);
-      }
-    });
-  });
+  // Y-axis domain — skip the first N chart-date slots (not per-player game
+  // indices) so that ALL players' window-filling volatility is excluded,
+  // regardless of when each player debuted. Then clip to 3rd/97th percentile
+  // to ignore genuine outlier games. Falls back to all values when the chart
+  // is short (early season / small sample).
+  const skipN = isCumulative
+    ? Math.min(5, Math.floor(chartData.length * 0.4))
+    : Math.min(rollingWindow, Math.floor(chartData.length * 0.4));
+  const laterVals = chartData.slice(skipN).flatMap(d =>
+    plotPlayers.map(p => d[`${p.playerid}-${p.searchType}`] as number | undefined)
+  ).filter((v): v is number => v !== undefined && !isNaN(v));
+
   const allVals = chartData.flatMap(d =>
     plotPlayers.map(p => d[`${p.playerid}-${p.searchType}`] as number | undefined)
   ).filter((v): v is number => v !== undefined && !isNaN(v));
 
-  const valsForDomain = stableVals.length >= 5 ? stableVals : allVals;
-
-  let yMin = valsForDomain.length ? Math.min(...valsForDomain) : 0;
-  let yMax = valsForDomain.length ? Math.max(...valsForDomain) : 1;
+  const pool = laterVals.length >= 5 ? laterVals : allVals;
+  const sortedPool = [...pool].sort((a, b) => a - b);
+  const loIdx = Math.max(0, Math.floor(sortedPool.length * 0.03));
+  const hiIdx = Math.min(sortedPool.length - 1, Math.ceil(sortedPool.length * 0.97) - 1);
+  let yMin = sortedPool[loIdx] ?? 0;
+  let yMax = sortedPool[hiIdx] ?? 1;
   const yPad = (yMax - yMin) * 0.15 || 0.05;
   const yDomain: [number, number] = [
     parseFloat((yMin - yPad).toFixed(3)),
