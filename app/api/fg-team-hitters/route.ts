@@ -46,20 +46,23 @@ export async function GET(req: NextRequest) {
   const mode   = searchParams.get('mode')   ?? 'regulars';  // regulars | top5 | bottom5
   const metric = searchParams.get('metric') ?? 'wOBA';
 
-  if (!team) return NextResponse.json([]);
+  // For top5/bottom5 with no team, we fetch league-wide.
+  // Regulars mode still requires a team.
+  if (!team && mode === 'regulars') return NextResponse.json([]);
 
-  const teamId = FG_TEAM_IDS[team];
-  if (!teamId) return NextResponse.json([]);
+  const teamId = team ? FG_TEAM_IDS[team] : null;
+  if (team && !teamId) return NextResponse.json([]);
 
   const sortField = METRIC_FIELD[metric] ?? 'wOBA';
 
-  // Base params — filter to the specific team via FG's team= parameter
+  // Base params — filter to a specific team if provided, otherwise league-wide
   const base: Record<string, string | number> = {
     pos: 'all', stats: 'bat', lg: 'all',
     qual: 0, type: 8,
     season, season1: season,
     ind: 0, pageitems: 500, pagenum: 1,
-    team: teamId, rost: 0,
+    rost: 0,
+    ...(teamId ? { team: teamId } : {}),
   };
 
   try {

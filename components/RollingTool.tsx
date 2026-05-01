@@ -863,7 +863,8 @@ export default function RollingTool() {
   }
 
   async function quickAdd(mode: 'regulars' | 'top5' | 'bottom5') {
-    if (!quickTeam || quickLoading) return;
+    if (quickLoading) return;
+    if (mode === 'regulars' && !quickTeam) return;
     setQuickLoading(true);
     setError(null);
     try {
@@ -1210,34 +1211,32 @@ export default function RollingTool() {
                   <option key={t.abbr} value={t.abbr}>{t.name}</option>
                 ))}
               </select>
-              {quickTeam && (
-                <div className="quick-add-btns">
-                  <button
-                    className="btn-quick"
-                    onClick={() => quickAdd('regulars')}
-                    disabled={quickLoading}
-                    title="Top 5 by plate appearances in the last ~15 team games"
-                  >
-                    {quickLoading ? '…' : 'Lineup Regulars'}
-                  </button>
-                  <button
-                    className="btn-quick"
-                    onClick={() => quickAdd('top5')}
-                    disabled={quickLoading}
-                    title={`Top 5 ${quickTeam} hitters by ${metric} this season`}
-                  >
-                    {quickLoading ? '…' : `Top 5 ${metric} ↑`}
-                  </button>
-                  <button
-                    className="btn-quick"
-                    onClick={() => quickAdd('bottom5')}
-                    disabled={quickLoading}
-                    title={`Bottom 5 ${quickTeam} hitters by ${metric} this season`}
-                  >
-                    {quickLoading ? '…' : `Bottom 5 ${metric} ↓`}
-                  </button>
-                </div>
-              )}
+              <div className="quick-add-btns">
+                <button
+                  className="btn-quick"
+                  onClick={() => quickAdd('regulars')}
+                  disabled={quickLoading || !quickTeam}
+                  title={quickTeam ? 'Top 7 by plate appearances in the last ~15 team games' : 'Select a team first'}
+                >
+                  {quickLoading ? '…' : 'Lineup Regulars'}
+                </button>
+                <button
+                  className="btn-quick"
+                  onClick={() => quickAdd('top5')}
+                  disabled={quickLoading}
+                  title={quickTeam ? `Top 5 ${quickTeam} hitters by ${metric} this season` : `Top 5 MLB hitters by ${metric} this season`}
+                >
+                  {quickLoading ? '…' : `Top 5 ${metric} ↑`}
+                </button>
+                <button
+                  className="btn-quick"
+                  onClick={() => quickAdd('bottom5')}
+                  disabled={quickLoading}
+                  title={quickTeam ? `Bottom 5 ${quickTeam} hitters by ${metric} this season` : `Bottom 5 MLB hitters by ${metric} this season`}
+                >
+                  {quickLoading ? '…' : `Bottom 5 ${metric} ↓`}
+                </button>
+              </div>
             </div>
           )}
 
