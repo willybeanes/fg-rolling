@@ -115,6 +115,10 @@ const METRICS = [
   { label: 'BABIP', field: 'BABIP', category: 'hit',  isPercent: false, decimals: 3, avg: 0.296, weightField: 'PA' },
   { label: 'K%',    field: 'K%',    category: 'both', isPercent: true,  decimals: 1, avg: 0.225, weightField: 'PA' },
   { label: 'BB%',   field: 'BB%',   category: 'both', isPercent: true,  decimals: 1, avg: 0.085, weightField: 'PA' },
+  { label: 'HR',    field: 'HR',    category: 'hit',  isCounting: true, isPercent: false, decimals: 0, avg: null, weightField: 'PA' },
+  { label: 'H',     field: 'H',     category: 'hit',  isCounting: true, isPercent: false, decimals: 0, avg: null, weightField: 'PA' },
+  { label: 'RBI',   field: 'RBI',   category: 'hit',  isCounting: true, isPercent: false, decimals: 0, avg: null, weightField: 'PA' },
+  { label: 'SB',    field: 'SB',    category: 'hit',  isCounting: true, isPercent: false, decimals: 0, avg: null, weightField: 'PA' },
   { label: 'ERA',   field: 'ERA',   category: 'pit',  isPercent: false, decimals: 2, avg: 4.2,   weightField: 'IP' },
   { label: 'FIP',   field: 'FIP',   category: 'pit',  isPercent: false, decimals: 2, avg: 4.1,   weightField: 'IP' },
   { label: 'xFIP',  field: 'xFIP',  category: 'pit',  isPercent: false, decimals: 2, avg: 4.1,   weightField: 'IP' },
@@ -230,6 +234,27 @@ function computeRolling(
     }
   }
 
+  return { rolling, windowStarts };
+}
+
+// Simple rolling sum for counting stats (HR, H, RBI, SB).
+// Every game in the window contributes its raw value; nulls are treated as 0.
+function computeRollingSum(
+  vals: (number | null)[],
+  window: number,
+): { rolling: (number | null)[]; windowStarts: number[] } {
+  const rolling: (number | null)[] = [];
+  const windowStarts: number[] = [];
+  for (let i = 0; i < vals.length; i++) {
+    const start = Math.max(0, i - window + 1);
+    windowStarts.push(start);
+    let sum = 0;
+    let hasVal = false;
+    for (let j = start; j <= i; j++) {
+      if (vals[j] !== null) { sum += vals[j]!; hasVal = true; }
+    }
+    rolling.push(hasVal ? sum : null);
+  }
   return { rolling, windowStarts };
 }
 
@@ -908,14 +933,18 @@ export default function RollingTool() {
           }
 
           const rawVals = games.map(g => parseVal(g[mc.field]));
-          // Weights: PA for hitters, IP for pitcher counting stats, BF for pitcher rate stats
-          const wf = mc.weightField;
-          const rawWeights = games.map(g =>
-            wf === 'IP' ? parseIP(g[wf]) : parseVal(g[wf])
-          );
           // Strip HTML from FanGraphs date strings (<a href="...">2026-04-28</a>)
           const dates = games.map(g => stripHtml(String(g.Date ?? g.date ?? '')));
-          const { rolling, windowStarts } = computeRolling(rawVals, rawWeights, rollingWindow);
+          // Counting stats (HR/H/RBI/SB): rolling sum. Rate stats: PA/IP-weighted average.
+          const { rolling, windowStarts } = (mc as { isCounting?: boolean }).isCounting
+            ? computeRollingSum(rawVals, rollingWindow)
+            : (() => {
+                const wf = mc.weightField;
+                const rawWeights = games.map(g =>
+                  wf === 'IP' ? parseIP(g[wf]) : parseVal(g[wf])
+                );
+                return computeRolling(rawVals, rawWeights, rollingWindow);
+              })();
 
           return {
             ...player,
@@ -999,7 +1028,9 @@ export default function RollingTool() {
   const isCumulative = plotPlayers.length > 0 && plotPlayers.every(p => rollingWindow > p.totalGames);
   const chartTitle = isCumulative
     ? `Cumulative ${plotMetric.label} — ${season}`
-    : `${rollingWindow}-Game Rolling ${plotMetric.label} — ${season}`;
+    : (plotMetric as { isCounting?: boolean }).isCounting
+      ? `${rollingWindow}-Game Rolling ${plotMetric.label} Total — ${season}`
+      : `${rollingWindow}-Game Rolling ${plotMetric.label} — ${season}`;
 
   // Zoom state → filtered display data
   const isZoomed = Boolean(zoom.zoomedLeft && zoom.zoomedRight);
@@ -1013,12 +1044,16 @@ export default function RollingTool() {
   // Y-axis domain ───────────────────────────────────────────────────────────
   // When not zoomed: skip early window-filling slots + 3rd/97th percentile clip.
   // When zoomed: simple min/max of visible data so the axis tightly fits the view.
+  const isCounting = !!(plotMetric as { isCounting?: boolean }).isCounting;
   let yMin = 0, yMax = 1;
   if (isZoomed) {
     const visVals = displayData.flatMap(d =>
       plotPlayers.map(p => d[`${p.playerid}-${p.searchType}`] as number | undefined)
     ).filter((v): v is number => v !== undefined && !isNaN(v));
-    if (visVals.length) { yMin = Math.min(...visVals); yMax = Math.max(...visVals); }
+    if (visVals.length) {
+      yMin = isCounting ? 0 : Math.min(...visVals);
+      yMax = Math.max(...visVals);
+    }
   } else {
     const skipN = isCumulative
       ? Math.min(5, Math.floor(chartData.length * 0.4))
@@ -1033,7 +1068,7 @@ export default function RollingTool() {
     const sortedPool = [...pool].sort((a, b) => a - b);
     const loIdx = Math.max(0, Math.floor(sortedPool.length * 0.03));
     const hiIdx = Math.min(sortedPool.length - 1, Math.ceil(sortedPool.length * 0.97) - 1);
-    yMin = sortedPool[loIdx] ?? 0;
+    yMin = isCounting ? 0 : (sortedPool[loIdx] ?? 0);
     yMax = sortedPool[hiIdx] ?? 1;
   }
   const yPad = (yMax - yMin) * 0.15 || 0.05;
@@ -1311,7 +1346,7 @@ export default function RollingTool() {
                       cursor={{ stroke: 'rgba(0,0,0,0.12)', strokeWidth: 1 }}
                     />
                     {/* MLB average reference line */}
-                    {plotMetric.avg !== undefined && (
+                    {plotMetric.avg != null && (
                       <ReferenceLine
                         y={plotMetric.avg}
                         stroke="rgba(0,0,0,0.18)"
