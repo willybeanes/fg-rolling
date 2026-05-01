@@ -11,7 +11,8 @@ import {
   ReferenceLine,
   ResponsiveContainer,
   Legend,
-  Customized,
+  usePlotArea,
+  useYAxisScale,
 } from 'recharts';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -550,35 +551,33 @@ function stackPositions(
   return result;
 }
 
-// ─── Headshot label layer (rendered inside Recharts SVG via <Customized>) ────
-// Recharts injects `offset` (exact plot-area bounds) and `yAxisMap` (with the
-// live D3 scale) so we get pixel-perfect positions without guessing margins.
-interface RechartOffset { top: number; left: number; width: number; height: number }
-interface RechartsAxis  { scale: (v: number) => number }
-
-function HeadshotLayer(props: Record<string, unknown> & {
+// ─── Headshot label layer — uses Recharts 3.x hooks for pixel-perfect layout ─
+// Rendered as a direct child of LineChart (Recharts 3.x supports arbitrary
+// children). usePlotArea() gives exact plot bounds; useYAxisScale() gives the
+// live D3 scale so yScale(value) → pixel y, no manual math needed.
+function HeadshotLayer({ players, lineColors, lastRow }: {
   players:    SelectedPlayer[];
   lineColors: Map<string, string>;
   lastRow:    Record<string, unknown> | null;
 }) {
-  const { players, lineColors, lastRow } = props;
-  const offset   = props.offset   as RechartOffset | undefined;
-  const yAxisMap = props.yAxisMap as Record<string, RechartsAxis> | undefined;
-  if (!offset || !yAxisMap) return null;
-  const yScale = Object.values(yAxisMap)[0]?.scale;
-  if (!yScale) return null;
+  const plotArea = usePlotArea();
+  const yScale   = useYAxisScale(0);   // yAxisId 0 = default right-side axis
 
-  const plotRight = offset.left + offset.width;
-  const plotTop   = offset.top;
-  const plotBot   = offset.top + offset.height;
+  if (!plotArea || !yScale) return null;
 
-  // Place headshots just past the y-axis, inside the CM.right margin
+  const plotRight = plotArea.x + plotArea.width;
+  const plotTop   = plotArea.y;
+  const plotBot   = plotArea.y + plotArea.height;
+
+  // Headshots live in the CM.right margin, past the y-axis ticks
   const hsCx = plotRight + YAXIS_W + HS_R + 4;
 
+  const mid = (plotTop + plotBot) / 2;
   const idealYs = players.map(p => {
-    if (!lastRow) return (plotTop + plotBot) / 2;
+    if (!lastRow) return mid;
     const v = lastRow[`${p.playerid}-${p.searchType}`] as number | undefined;
-    return v !== undefined ? yScale(v) : (plotTop + plotBot) / 2;
+    if (v === undefined) return mid;
+    return yScale(v) ?? mid;
   });
 
   const stackedCys = stackPositions(
@@ -1265,13 +1264,8 @@ export default function RollingTool() {
                         />
                       );
                     })}
-                    {/* Headshot label column — uses Recharts' live y-scale for exact positions */}
-                    <Customized
-                      component={HeadshotLayer}
-                      players={plotPlayers}
-                      lineColors={lineColors}
-                      lastRow={lastRow}
-                    />
+                    {/* Headshot label column — Recharts 3.x: render directly, hooks provide layout */}
+                    <HeadshotLayer players={plotPlayers} lineColors={lineColors} lastRow={lastRow} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
