@@ -277,7 +277,7 @@ function pickTicks(dates: string[], minDays = 7): string[] {
 
 function headshotUrl(mlbamid: number | null): string | null {
   if (!mlbamid) return null;
-  return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${mlbamid}/headshot/67/current`;
+  return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_120,q_auto:best/v1/people/${mlbamid}/headshot/67/current`;
 }
 
 // ─── URL state helpers ────────────────────────────────────────────────────────
@@ -604,19 +604,27 @@ function HeadshotLayer({ players, lineColors, lastRow }: {
         const cy     = stackedCys[pi];
         return (
           <g key={key}>
+            {/* Leader line from where the player's chart line ends to the headshot */}
             <line
               x1={plotRight} y1={idealY}
-              x2={hsCx - HS_R - 3} y2={cy}
-              stroke={clr} strokeWidth={1.5} strokeOpacity={0.75}
+              x2={hsCx - HS_R - 2} y2={cy}
+              stroke={clr} strokeWidth={1.5} strokeOpacity={0.6}
             />
-            <circle cx={hsCx} cy={cy} r={HS_R + 2} fill="#fff" stroke={clr} strokeWidth={2} />
             {player.headshotUrl ? (
-              <image
-                href={player.headshotUrl}
-                x={hsCx - HS_R} y={cy - HS_R}
-                width={HS_R * 2} height={HS_R * 2}
-                clipPath={`url(#hs-ov-${key})`}
-              />
+              <>
+                {/* White background behind image */}
+                <circle cx={hsCx} cy={cy} r={HS_R} fill="#fff" />
+                {/* Face-cropped headshot: preserveAspectRatio mirrors object-fit:cover + object-position:50% 0% */}
+                <image
+                  href={player.headshotUrl}
+                  x={hsCx - HS_R} y={cy - HS_R}
+                  width={HS_R * 2} height={HS_R * 2}
+                  preserveAspectRatio="xMidYMin slice"
+                  clipPath={`url(#hs-ov-${key})`}
+                />
+                {/* Thin gray border ring drawn on top */}
+                <circle cx={hsCx} cy={cy} r={HS_R} fill="none" stroke="rgba(0,0,0,0.18)" strokeWidth={1} />
+              </>
             ) : (
               <circle cx={hsCx} cy={cy} r={HS_R} fill={clr} />
             )}
