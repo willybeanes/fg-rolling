@@ -47,6 +47,57 @@ interface GameLog {
 // Colorblind-friendly palette (Wong) — saturated enough for white background
 const PLAYER_COLORS = ['#0072B2', '#E69F00', '#CC79A7', '#009E73', '#56B4E9'];
 
+// MLB team primary colors (chosen for legibility on a light background)
+const TEAM_COLORS: Record<string, string> = {
+  ARI: '#A71930',
+  ATL: '#CE1141',
+  BAL: '#DF4601',
+  BOS: '#BD3039',
+  CHC: '#0E3386',
+  CIN: '#C6011F',
+  CLE: '#E31937',
+  COL: '#33006F',
+  CWS: '#27251F',
+  DET: '#0C2340',
+  HOU: '#F4911E',
+  KC:  '#004687',
+  LAA: '#BA0021',
+  LAD: '#005A9C',
+  MIA: '#00A3E0',
+  MIL: '#FFC52F',
+  MIN: '#D31145',
+  NYM: '#FF5910',
+  NYY: '#003087',
+  OAK: '#EFB21E',
+  PHI: '#E81828',
+  PIT: '#FDB827',
+  SD:  '#2F241D',
+  SEA: '#005C5C',
+  SF:  '#FD5A1E',
+  STL: '#C41E3A',
+  TB:  '#8FBCE6',
+  TEX: '#C0111F',
+  TOR: '#134A8E',
+  WSH: '#AB0003',
+};
+
+// Returns a playerKey→color map. Uses team colors when every player is on a
+// different team and all teams have a known color; otherwise uses palette colors.
+function effectiveColors(players: { playerid: string; searchType: string; team?: string; color: string }[]): Map<string, string> {
+  const map = new Map<string, string>();
+  if (players.length === 0) return map;
+
+  const teams = players.map(p => p.team ?? '');
+  const useTeam =
+    teams.every(t => t && TEAM_COLORS[t]) &&   // all teams known
+    new Set(teams).size === teams.length;        // all different teams
+
+  players.forEach(p => {
+    map.set(`${p.playerid}-${p.searchType}`, useTeam ? TEAM_COLORS[p.team!]! : p.color);
+  });
+  return map;
+}
+
 // weightField: the per-game denominator used to PA/IP-weight the rolling average,
 // matching FanGraphs' approach (games with more PAs or IP count proportionally more).
 // 'PA' = plate appearances (hitters), 'IP' = innings pitched, 'BF' = batters faced.
@@ -70,6 +121,39 @@ type MetricLabel = typeof METRICS[number]['label'];
 const WINDOW_MIN = 2;
 const WINDOW_MAX = 500;
 const SEASONS = [2026, 2025, 2024, 2023] as const;
+
+const MLB_TEAM_LIST = [
+  { abbr: 'ARI', name: 'Arizona Diamondbacks' },
+  { abbr: 'ATL', name: 'Atlanta Braves' },
+  { abbr: 'BAL', name: 'Baltimore Orioles' },
+  { abbr: 'BOS', name: 'Boston Red Sox' },
+  { abbr: 'CHC', name: 'Chicago Cubs' },
+  { abbr: 'CWS', name: 'Chicago White Sox' },
+  { abbr: 'CIN', name: 'Cincinnati Reds' },
+  { abbr: 'CLE', name: 'Cleveland Guardians' },
+  { abbr: 'COL', name: 'Colorado Rockies' },
+  { abbr: 'DET', name: 'Detroit Tigers' },
+  { abbr: 'HOU', name: 'Houston Astros' },
+  { abbr: 'KC',  name: 'Kansas City Royals' },
+  { abbr: 'LAA', name: 'Los Angeles Angels' },
+  { abbr: 'LAD', name: 'Los Angeles Dodgers' },
+  { abbr: 'MIA', name: 'Miami Marlins' },
+  { abbr: 'MIL', name: 'Milwaukee Brewers' },
+  { abbr: 'MIN', name: 'Minnesota Twins' },
+  { abbr: 'NYM', name: 'New York Mets' },
+  { abbr: 'NYY', name: 'New York Yankees' },
+  { abbr: 'OAK', name: 'Oakland Athletics' },
+  { abbr: 'PHI', name: 'Philadelphia Phillies' },
+  { abbr: 'PIT', name: 'Pittsburgh Pirates' },
+  { abbr: 'SD',  name: 'San Diego Padres' },
+  { abbr: 'SEA', name: 'Seattle Mariners' },
+  { abbr: 'SF',  name: 'San Francisco Giants' },
+  { abbr: 'STL', name: 'St. Louis Cardinals' },
+  { abbr: 'TB',  name: 'Tampa Bay Rays' },
+  { abbr: 'TEX', name: 'Texas Rangers' },
+  { abbr: 'TOR', name: 'Toronto Blue Jays' },
+  { abbr: 'WSH', name: 'Washington Nationals' },
+] as const;
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
@@ -233,50 +317,112 @@ function parseUrlState() {
   return { playerType, metric, rollingWindow, season, players };
 }
 
+// ─── Team matching (client-side) ──────────────────────────────────────────────
+
+const MLB_TEAMS_CLIENT = [
+  { abbr: 'BAL', terms: ['baltimore', 'orioles', 'bal', "o's", 'os'] },
+  { abbr: 'BOS', terms: ['boston', 'red sox', 'redsox', 'bos'] },
+  { abbr: 'NYY', terms: ['new york yankees', 'yankees', 'nyy', 'ny yankees'] },
+  { abbr: 'TB',  terms: ['tampa bay', 'rays', 'tb', 'tampa'] },
+  { abbr: 'TOR', terms: ['toronto', 'blue jays', 'bluejays', 'jays', 'tor'] },
+  { abbr: 'CWS', terms: ['chicago white sox', 'white sox', 'whitesox', 'cws', 'chisox'] },
+  { abbr: 'CLE', terms: ['cleveland', 'guardians', 'cle'] },
+  { abbr: 'DET', terms: ['detroit', 'tigers', 'det'] },
+  { abbr: 'KC',  terms: ['kansas city', 'royals', 'kc'] },
+  { abbr: 'MIN', terms: ['minnesota', 'twins', 'min'] },
+  { abbr: 'HOU', terms: ['houston', 'astros', 'hou'] },
+  { abbr: 'LAA', terms: ['los angeles angels', 'angels', 'laa', 'la angels', 'anaheim'] },
+  { abbr: 'OAK', terms: ['oakland', 'athletics', 'oak', "a's", 'as'] },
+  { abbr: 'SEA', terms: ['seattle', 'mariners', 'sea', "m's", 'ms'] },
+  { abbr: 'TEX', terms: ['texas', 'rangers', 'tex'] },
+  { abbr: 'ATL', terms: ['atlanta', 'braves', 'atl'] },
+  { abbr: 'MIA', terms: ['miami', 'marlins', 'mia'] },
+  { abbr: 'NYM', terms: ['new york mets', 'mets', 'nym', 'ny mets'] },
+  { abbr: 'PHI', terms: ['philadelphia', 'phillies', 'phi', 'phils'] },
+  { abbr: 'WSH', terms: ['washington', 'nationals', 'wsh', 'nats'] },
+  { abbr: 'CHC', terms: ['chicago cubs', 'cubs', 'chc'] },
+  { abbr: 'CIN', terms: ['cincinnati', 'reds', 'cin'] },
+  { abbr: 'MIL', terms: ['milwaukee', 'brewers', 'mil'] },
+  { abbr: 'PIT', terms: ['pittsburgh', 'pirates', 'pit', 'bucs'] },
+  { abbr: 'STL', terms: ['st. louis', 'st louis', 'cardinals', 'stl', 'cards'] },
+  { abbr: 'ARI', terms: ['arizona', 'diamondbacks', 'd-backs', 'dbacks', 'ari'] },
+  { abbr: 'COL', terms: ['colorado', 'rockies', 'col', 'rox'] },
+  { abbr: 'LAD', terms: ['los angeles dodgers', 'dodgers', 'lad', 'la dodgers'] },
+  { abbr: 'SD',  terms: ['san diego', 'padres', 'sd'] },
+  { abbr: 'SF',  terms: ['san francisco', 'giants', 'sf'] },
+] as const;
+
+function matchTeamClient(query: string): string | null {
+  if (query.length < 2) return null;
+  const q = query.toLowerCase().trim();
+  for (const team of MLB_TEAMS_CLIENT) {
+    for (const term of team.terms) {
+      if (term.startsWith(q) || term === q) return team.abbr;
+    }
+  }
+  return null;
+}
+
 // ─── Player Search Component ──────────────────────────────────────────────────
 
 function PlayerSearch({
   onSelect,
   disabled,
   playerTypeFilter,
-  season,
+  playerPool,
+  poolLoading,
   selectedKeys,
 }: {
   onSelect: (p: FgPlayer) => void;
   disabled: boolean;
   playerTypeFilter: 'h' | 'p';
-  season: number;
+  playerPool: FgPlayer[];
+  poolLoading: boolean;
   selectedKeys: Set<string>;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<FgPlayer[]>([]);
   const [isTeamSearch, setIsTeamSearch] = useState(false);
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     if (query.length < 2) { setResults([]); setOpen(false); setIsTeamSearch(false); return; }
-    clearTimeout(timer.current);
-    timer.current = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/fg-search?str=${encodeURIComponent(query)}&season=${season}`);
-        const data: FgPlayer[] = await res.json();
-        // Detect team search: all results share the same non-empty team
-        const teamSearch = data.length > 2 && data.every(p => p.team && p.team === data[0].team);
-        setIsTeamSearch(teamSearch);
-        setResults(data);
-        setOpen(data.length > 0);
-        setHighlighted(-1);
-      } catch { setResults([]); }
-      finally { setLoading(false); }
-    }, 280);
-    return () => clearTimeout(timer.current);
-  }, [query, season]);
+
+    const q = query.toLowerCase().trim();
+    const teamAbbr = matchTeamClient(q);
+    let filtered: FgPlayer[];
+    let teamSearch = false;
+
+    if (teamAbbr) {
+      // Team search: show all players on that team (both hitters and pitchers)
+      filtered = playerPool
+        .filter(p => p.team === teamAbbr)
+        .sort((a, b) => {
+          const aLast = a.name.split(' ').slice(-1)[0];
+          const bLast = b.name.split(' ').slice(-1)[0];
+          return aLast.localeCompare(bLast);
+        });
+      teamSearch = true;
+    } else {
+      // Name search: restrict to active tab, sort starts-with first, cap at 20
+      filtered = playerPool
+        .filter(p => p.searchType === playerTypeFilter && p.name.toLowerCase().includes(q))
+        .sort((a, b) => {
+          const aStarts = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+          const bStarts = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+          return aStarts - bStarts || a.name.localeCompare(b.name);
+        })
+        .slice(0, 20);
+    }
+
+    setIsTeamSearch(teamSearch);
+    setResults(filtered);
+    setOpen(filtered.length > 0);
+    setHighlighted(-1);
+  }, [query, playerPool]);
 
   function select(p: FgPlayer) {
     const key = `${p.playerid}-${p.searchType}`;
@@ -293,6 +439,8 @@ function PlayerSearch({
     }
   }
 
+  // Always filter results to the active tab (hitter or pitcher).
+  // For team searches the full roster is in `results`; for name searches it's the top 20.
   const visibleResults = results.filter(p => p.searchType === playerTypeFilter);
 
   function handleKey(e: React.KeyboardEvent) {
@@ -302,6 +450,12 @@ function PlayerSearch({
     if (e.key === 'Enter' && highlighted >= 0) { e.preventDefault(); select(visibleResults[highlighted]); }
     if (e.key === 'Escape') { setOpen(false); }
   }
+
+  const placeholder = disabled
+    ? 'Max 5 players'
+    : poolLoading
+      ? 'Loading players…'
+      : 'Search player or team…';
 
   return (
     <div className="relative">
@@ -313,14 +467,11 @@ function PlayerSearch({
         onKeyDown={handleKey}
         onFocus={() => results.length > 0 && setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder={disabled ? 'Max 5 players' : 'Search player or team…'}
-        disabled={disabled}
+        placeholder={placeholder}
+        disabled={disabled || poolLoading}
         className="search-input"
         autoComplete="off"
       />
-      {loading && (
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted text-xs">…</span>
-      )}
       {open && (
         <ul ref={listRef} className="search-dropdown">
           {visibleResults.map((p, i) => {
@@ -441,18 +592,22 @@ function CustomTooltip({
 
 // ─── Custom Legend ────────────────────────────────────────────────────────────
 
-function ChartLegend({ players }: { players: SelectedPlayer[] }) {
+function ChartLegend({ players, colors }: { players: SelectedPlayer[]; colors: Map<string, string> }) {
   return (
     <div className="chart-legend">
-      {players.map(p => (
-        <div key={`${p.playerid}-${p.searchType}`} className="legend-item">
-          <span className="legend-line" style={{ background: p.color }} />
-          <span className="legend-name">{p.name}</span>
-          {p.totalGames < 5 && (
-            <span className="legend-warn">({p.totalGames} games)</span>
-          )}
-        </div>
-      ))}
+      {players.map(p => {
+        const key = `${p.playerid}-${p.searchType}`;
+        const clr = colors.get(key) ?? p.color;
+        return (
+          <div key={key} className="legend-item">
+            <span className="legend-line" style={{ background: clr }} />
+            <span className="legend-name">{p.name}</span>
+            {p.totalGames < 5 && (
+              <span className="legend-warn">({p.totalGames} games)</span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -478,6 +633,23 @@ export default function RollingTool() {
   const [plotPlayers, setPlotPlayers] = useState<SelectedPlayer[]>([]);
   const [plotMetric, setPlotMetric] = useState<typeof METRICS[number]>(getMetric(urlState?.metric ?? 'wOBA'));
 
+  // ── Player pool: all FG players preloaded for instant client-side search ──
+  const [playerPool, setPlayerPool] = useState<FgPlayer[]>([]);
+  const [poolLoading, setPoolLoading] = useState(true);
+
+  // ── Quick-add by team (hitter tab only) ──────────────────────────────────
+  const [quickTeam, setQuickTeam] = useState('');
+  const [quickLoading, setQuickLoading] = useState(false);
+
+  useEffect(() => {
+    setPoolLoading(true);
+    fetch(`/api/fg-players?season=${season}`)
+      .then(r => r.json())
+      .then((data: unknown) => setPlayerPool(Array.isArray(data) ? data as FgPlayer[] : []))
+      .catch(() => setPlayerPool([]))
+      .finally(() => setPoolLoading(false));
+  }, [season]);
+
   // ── URL sync: update address bar whenever shareable state changes ──────────
   useEffect(() => {
     const params = new URLSearchParams();
@@ -502,6 +674,7 @@ export default function RollingTool() {
     setPlotPlayers([]);
     setError(null);
     colorIndex.current = 0;
+    setQuickTeam('');
     // Default metric for this tab
     const first = METRICS.find(m => m.category !== (type === 'hit' ? 'pit' : 'hit'));
     if (first) setMetric(first.label);
@@ -536,6 +709,46 @@ export default function RollingTool() {
     setPlotPlayers([]);
     setError(null);
     colorIndex.current = 0;
+  }
+
+  async function quickAdd(mode: 'regulars' | 'top5' | 'bottom5') {
+    if (!quickTeam || quickLoading) return;
+    setQuickLoading(true);
+    setError(null);
+    try {
+      const qs = new URLSearchParams({
+        team: quickTeam,
+        season: String(season),
+        mode,
+        metric,
+      });
+      const res = await fetch(`/api/fg-team-hitters?${qs}`);
+      const incoming: FgPlayer[] = await res.json();
+      if (!Array.isArray(incoming) || incoming.length === 0) return;
+
+      // Replace current selection with the quick-add set
+      colorIndex.current = 0;
+      setChartData([]);
+      setPlotPlayers([]);
+      setSelectedPlayers(
+        incoming.slice(0, 5).map((p, i) => ({
+          ...p,
+          color: PLAYER_COLORS[i % PLAYER_COLORS.length],
+          rolling: [],
+          windowStarts: [],
+          gameDates: [],
+          gameVals: [],
+          lastValidIndex: -1,
+          totalGames: 0,
+          headshotUrl: headshotUrl(p.mlbamid),
+        }))
+      );
+      colorIndex.current = Math.min(incoming.length, 5);
+    } catch {
+      setError('Failed to load team players');
+    } finally {
+      setQuickLoading(false);
+    }
   }
 
   const metricConfig = getMetric(metric);
@@ -676,6 +889,11 @@ export default function RollingTool() {
 
   const hasChart = chartData.length > 0 && plotPlayers.length > 0;
 
+  // Compute display colors: team colors when every player is on a different
+  // known team, otherwise fall back to the assigned palette colors.
+  const chipColors  = effectiveColors(selectedPlayers);
+  const lineColors  = effectiveColors(plotPlayers);
+
   return (
     <div className="tool-root">
       {/* Header */}
@@ -715,7 +933,8 @@ export default function RollingTool() {
                 onSelect={addPlayer}
                 disabled={selectedPlayers.length >= 5}
                 playerTypeFilter={playerType === 'hit' ? 'h' : 'p'}
-                season={season}
+                playerPool={playerPool}
+                poolLoading={poolLoading}
                 selectedKeys={new Set(selectedPlayers.map(p => `${p.playerid}-${p.searchType}`))}
               />
             </div>
@@ -780,13 +999,60 @@ export default function RollingTool() {
             </div>
           </div>
 
+          {/* Quick-add row — hitter tab only */}
+          {playerType === 'hit' && (
+            <div className="quick-add-row">
+              <span className="control-label" style={{ whiteSpace: 'nowrap' }}>Quick Add</span>
+              <select
+                className="select-input"
+                value={quickTeam}
+                onChange={e => setQuickTeam(e.target.value)}
+                disabled={quickLoading}
+              >
+                <option value="">— select team —</option>
+                {MLB_TEAM_LIST.map(t => (
+                  <option key={t.abbr} value={t.abbr}>{t.name}</option>
+                ))}
+              </select>
+              {quickTeam && (
+                <div className="quick-add-btns">
+                  <button
+                    className="btn-quick"
+                    onClick={() => quickAdd('regulars')}
+                    disabled={quickLoading}
+                    title="Top 5 by plate appearances in the last ~15 team games"
+                  >
+                    {quickLoading ? '…' : 'Lineup Regulars'}
+                  </button>
+                  <button
+                    className="btn-quick"
+                    onClick={() => quickAdd('top5')}
+                    disabled={quickLoading}
+                    title={`Top 5 ${quickTeam} hitters by ${metric} this season`}
+                  >
+                    {quickLoading ? '…' : `Top 5 ${metric} ↑`}
+                  </button>
+                  <button
+                    className="btn-quick"
+                    onClick={() => quickAdd('bottom5')}
+                    disabled={quickLoading}
+                    title={`Bottom 5 ${quickTeam} hitters by ${metric} this season`}
+                  >
+                    {quickLoading ? '…' : `Bottom 5 ${metric} ↓`}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Player chips */}
           {selectedPlayers.length > 0 && (
             <div className="chips-row">
               {selectedPlayers.map(p => {
                 const key = `${p.playerid}-${p.searchType}`;
+                const clr = chipColors.get(key) ?? p.color;
                 return (
-                  <div key={key} className="chip" style={{ borderColor: p.color }}>
+                  <div key={key} className="chip" style={{ borderColor: clr }}>
                     {p.headshotUrl && (
                       <img
                         src={p.headshotUrl}
@@ -795,7 +1061,7 @@ export default function RollingTool() {
                         onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />
                     )}
-                    <span className="chip-dot" style={{ background: p.color }} />
+                    <span className="chip-dot" style={{ background: clr }} />
                     <span className="chip-name">{p.name}</span>
                     {p.searchType === 'p' && <span className="chip-badge">P</span>}
                     <button className="chip-remove" onClick={() => removePlayer(key)}>×</button>
@@ -825,7 +1091,7 @@ export default function RollingTool() {
           {hasChart && !loading && (
             <>
               <div className="chart-title">{chartTitle}</div>
-              <ChartLegend players={plotPlayers} />
+              <ChartLegend players={plotPlayers} colors={lineColors} />
               <div className="chart-wrap">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData} margin={{ top: 16, right: 28, bottom: 4, left: 0 }}>
@@ -876,15 +1142,16 @@ export default function RollingTool() {
                     )}
                     {plotPlayers.map(player => {
                       const key = `${player.playerid}-${player.searchType}`;
+                      const clr = lineColors.get(key) ?? player.color;
                       return (
                         <Line
                           key={key}
                           type="monotone"
                           dataKey={key}
-                          stroke={player.color}
+                          stroke={clr}
                           strokeWidth={2.5}
-                          dot={makeHeadshotDot(key, player.headshotUrl, player.lastValidIndex, player.color)}
-                          activeDot={{ r: 4, fill: player.color, stroke: '#fff', strokeWidth: 2 }}
+                          dot={makeHeadshotDot(key, player.headshotUrl, player.lastValidIndex, clr)}
+                          activeDot={{ r: 4, fill: clr, stroke: '#fff', strokeWidth: 2 }}
                           connectNulls={false}
                           isAnimationActive={false}
                         />

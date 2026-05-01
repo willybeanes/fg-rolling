@@ -244,6 +244,45 @@ body {
 
 .btn-clear:hover { color: var(--text); border-color: #aaa; }
 
+/* ─── Quick-add row ─────────────────────────────────────────────────────────── */
+.quick-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-top: 14px;
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.quick-add-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.btn-quick {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--muted-2);
+  border: 1px solid var(--border-hi);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+.btn-quick:hover:not(:disabled) {
+  color: var(--text);
+  border-color: #aaa;
+  background: var(--surface-2);
+}
+
+.btn-quick:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* ─── Player chips ──────────────────────────────────────────────────────────── */
 .chips-row {
   display: flex;
@@ -453,6 +492,11 @@ body {
   .btn-group { width: 100%; justify-content: stretch; }
   .btn-plot  { flex: 1; font-size: 15px; padding: 11px 16px; }
   .btn-clear { font-size: 15px; padding: 11px 16px; }
+
+  /* Quick-add — stack vertically, full-width team dropdown */
+  .quick-add-row  { flex-direction: column; align-items: stretch; }
+  .quick-add-btns { width: 100%; }
+  .btn-quick      { flex: 1; font-size: 14px; padding: 10px 12px; }
 
   /* Search dropdown — shorter so it doesn't swallow the screen */
   .search-dropdown { max-height: 200px; }
