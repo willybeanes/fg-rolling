@@ -618,8 +618,8 @@ function HeadshotLayer({ players, lineColors, lastRow }: {
                 <image
                   href={player.headshotUrl}
                   x={hsCx - HS_R} y={cy - HS_R}
-                  width={HS_R * 2} height={HS_R * 2 + 3}
-                  preserveAspectRatio="xMidYMin slice"
+                  width={HS_R * 2} height={HS_R * 2}
+                  preserveAspectRatio="xMidYMid slice"
                   clipPath={`url(#hs-ov-${key})`}
                 />
                 {/* Thin gray border ring drawn on top */}
