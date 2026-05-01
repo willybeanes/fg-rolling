@@ -17,6 +17,7 @@ const FG_TEAM_IDS: Record<string, number> = {
 const METRIC_FIELD: Record<string, string> = {
   'wOBA': 'wOBA', 'wRC+': 'wRC+', 'OBP': 'OBP', 'SLG': 'SLG',
   'BABIP': 'BABIP', 'K%': 'K%', 'BB%': 'BB%',
+  'HR': 'HR', 'H': 'H', 'RBI': 'RBI', 'SB': 'SB',
 };
 // For these metrics, a lower value is "worse" (bottom5 = highest value)
 const HIGHER_IS_WORSE = new Set(['K%']);
@@ -55,10 +56,11 @@ export async function GET(req: NextRequest) {
 
   const sortField = METRIC_FIELD[metric] ?? 'wOBA';
 
-  // Base params — filter to a specific team if provided, otherwise league-wide
+  // League-wide queries use FG's standard qualifier (qual:'y'); team queries
+  // use no minimum so we can see all rostered players.
   const base: Record<string, string | number> = {
     pos: 'all', stats: 'bat', lg: 'all',
-    qual: 0, type: 8,
+    qual: teamId ? 0 : 'y', type: 8,
     season, season1: season,
     ind: 0, pageitems: 500, pagenum: 1,
     rost: 0,
@@ -91,10 +93,13 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // For top/bottom 5, require a meaningful PA sample (≥ 20 PA this season)
+    // For team top/bottom 5, require a meaningful PA sample (≥ 20 PA).
+    // League-wide queries already use FG's qualifier so no extra filter needed.
     const qualified = mode === 'regulars'
       ? rows
-      : rows.filter(r => (r.PA as number ?? 0) >= 20 && r[sortField] != null);
+      : teamId
+        ? rows.filter(r => (r.PA as number ?? 0) >= 20 && r[sortField] != null)
+        : rows.filter(r => r[sortField] != null);
 
     // Sort
     let sorted: Record<string, unknown>[];
