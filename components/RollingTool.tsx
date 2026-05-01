@@ -9,6 +9,7 @@ import {
   CartesianGrid,
   Tooltip,
   ReferenceLine,
+  ReferenceArea,
   ResponsiveContainer,
   Legend,
   usePlotArea,
@@ -730,6 +731,33 @@ export default function RollingTool() {
   const [quickTeam, setQuickTeam] = useState('');
   const [quickLoading, setQuickLoading] = useState(false);
 
+  // ── Drag-to-zoom ─────────────────────────────────────────────────────────
+  const [zoom, setZoom] = useState<{
+    isSelecting: boolean;
+    selLeft: string | null;
+    selRight: string | null;
+    zoomedLeft: string | null;
+    zoomedRight: string | null;
+  }>({ isSelecting: false, selLeft: null, selRight: null, zoomedLeft: null, zoomedRight: null });
+  const resetZoom = () =>
+    setZoom({ isSelecting: false, selLeft: null, selRight: null, zoomedLeft: null, zoomedRight: null });
+
+  // Commit or cancel zoom when mouse is released anywhere (even outside chart)
+  useEffect(() => {
+    if (!zoom.isSelecting) return;
+    const up = () => {
+      setZoom(z => {
+        if (z.isSelecting && z.selLeft && z.selRight && z.selLeft !== z.selRight) {
+          const [l, r] = [z.selLeft, z.selRight].sort();
+          return { isSelecting: false, selLeft: null, selRight: null, zoomedLeft: l, zoomedRight: r };
+        }
+        return { ...z, isSelecting: false, selLeft: null, selRight: null };
+      });
+    };
+    window.addEventListener('mouseup', up);
+    return () => window.removeEventListener('mouseup', up);
+  }, [zoom.isSelecting]);
+
   useEffect(() => {
     setPoolLoading(true);
     fetch(`/api/fg-players?season=${season}`)
@@ -798,6 +826,7 @@ export default function RollingTool() {
     setPlotPlayers([]);
     setError(null);
     colorIndex.current = 0;
+    resetZoom();
   }
 
   async function quickAdd(mode: 'regulars' | 'top5' | 'bottom5') {
@@ -940,6 +969,7 @@ export default function RollingTool() {
       setPlotPlayers(enrichedFinal);
       setPlotMetric(mc);
       setChartData(data);
+      resetZoom();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load data');
     } finally {
@@ -963,42 +993,55 @@ export default function RollingTool() {
     ? `Cumulative ${plotMetric.label} — ${season}`
     : `${rollingWindow}-Game Rolling ${plotMetric.label} — ${season}`;
 
-  // Y-axis domain — skip the first N chart-date slots (not per-player game
-  // indices) so that ALL players' window-filling volatility is excluded,
-  // regardless of when each player debuted. Then clip to 3rd/97th percentile
-  // to ignore genuine outlier games. Falls back to all values when the chart
-  // is short (early season / small sample).
-  const skipN = isCumulative
-    ? Math.min(5, Math.floor(chartData.length * 0.4))
-    : Math.min(rollingWindow, Math.floor(chartData.length * 0.4));
-  const laterVals = chartData.slice(skipN).flatMap(d =>
-    plotPlayers.map(p => d[`${p.playerid}-${p.searchType}`] as number | undefined)
-  ).filter((v): v is number => v !== undefined && !isNaN(v));
+  // Zoom state → filtered display data
+  const isZoomed = Boolean(zoom.zoomedLeft && zoom.zoomedRight);
+  const displayData = isZoomed
+    ? chartData.filter(d => {
+        const date = d.date as string;
+        return date >= zoom.zoomedLeft! && date <= zoom.zoomedRight!;
+      })
+    : chartData;
 
-  const allVals = chartData.flatMap(d =>
-    plotPlayers.map(p => d[`${p.playerid}-${p.searchType}`] as number | undefined)
-  ).filter((v): v is number => v !== undefined && !isNaN(v));
-
-  const pool = laterVals.length >= 5 ? laterVals : allVals;
-  const sortedPool = [...pool].sort((a, b) => a - b);
-  const loIdx = Math.max(0, Math.floor(sortedPool.length * 0.03));
-  const hiIdx = Math.min(sortedPool.length - 1, Math.ceil(sortedPool.length * 0.97) - 1);
-  let yMin = sortedPool[loIdx] ?? 0;
-  let yMax = sortedPool[hiIdx] ?? 1;
+  // Y-axis domain ───────────────────────────────────────────────────────────
+  // When not zoomed: skip early window-filling slots + 3rd/97th percentile clip.
+  // When zoomed: simple min/max of visible data so the axis tightly fits the view.
+  let yMin = 0, yMax = 1;
+  if (isZoomed) {
+    const visVals = displayData.flatMap(d =>
+      plotPlayers.map(p => d[`${p.playerid}-${p.searchType}`] as number | undefined)
+    ).filter((v): v is number => v !== undefined && !isNaN(v));
+    if (visVals.length) { yMin = Math.min(...visVals); yMax = Math.max(...visVals); }
+  } else {
+    const skipN = isCumulative
+      ? Math.min(5, Math.floor(chartData.length * 0.4))
+      : Math.min(rollingWindow, Math.floor(chartData.length * 0.4));
+    const laterVals = chartData.slice(skipN).flatMap(d =>
+      plotPlayers.map(p => d[`${p.playerid}-${p.searchType}`] as number | undefined)
+    ).filter((v): v is number => v !== undefined && !isNaN(v));
+    const allVals = chartData.flatMap(d =>
+      plotPlayers.map(p => d[`${p.playerid}-${p.searchType}`] as number | undefined)
+    ).filter((v): v is number => v !== undefined && !isNaN(v));
+    const pool = laterVals.length >= 5 ? laterVals : allVals;
+    const sortedPool = [...pool].sort((a, b) => a - b);
+    const loIdx = Math.max(0, Math.floor(sortedPool.length * 0.03));
+    const hiIdx = Math.min(sortedPool.length - 1, Math.ceil(sortedPool.length * 0.97) - 1);
+    yMin = sortedPool[loIdx] ?? 0;
+    yMax = sortedPool[hiIdx] ?? 1;
+  }
   const yPad = (yMax - yMin) * 0.15 || 0.05;
   const yDomain: [number, number] = [
     parseFloat((yMin - yPad).toFixed(3)),
     parseFloat((yMax + yPad).toFixed(3)),
   ];
 
-  const hasChart = chartData.length > 0 && plotPlayers.length > 0;
+  const hasChart = displayData.length > 0 && plotPlayers.length > 0;
 
   // Compute display colors: team colors when every player is on a different
   // known team, otherwise fall back to the assigned palette colors.
   const chipColors = effectiveColors(selectedPlayers);
   const lineColors = effectiveColors(plotPlayers);
 
-  const lastRow = chartData.length > 0 ? chartData[chartData.length - 1] : null;
+  const lastRow = displayData.length > 0 ? displayData[displayData.length - 1] : null;
 
   return (
     <div className="tool-root">
@@ -1196,16 +1239,44 @@ export default function RollingTool() {
 
           {hasChart && !loading && (
             <>
-              <div className="chart-title">{chartTitle}</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                <div className="chart-title">{chartTitle}</div>
+                {isZoomed && (
+                  <button className="btn-clear" style={{ fontSize: 11, padding: '2px 10px' }} onClick={resetZoom}>
+                    ↩ Reset zoom
+                  </button>
+                )}
+              </div>
               <ChartLegend players={plotPlayers} colors={lineColors} />
-              <div className="chart-wrap">
+              <div className="chart-wrap" style={{ cursor: zoom.isSelecting ? 'col-resize' : 'crosshair' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: CM.top, right: CM.right, bottom: CM.bottom, left: CM.left }}>
+                  <LineChart
+                    data={displayData}
+                    margin={{ top: CM.top, right: CM.right, bottom: CM.bottom, left: CM.left }}
+                    onMouseDown={e => {
+                      const label = e?.activeLabel;
+                      if (label) setZoom(z => ({ ...z, isSelecting: true, selLeft: String(label), selRight: String(label) }));
+                    }}
+                    onMouseMove={e => {
+                      if (zoom.isSelecting && e?.activeLabel)
+                        setZoom(z => ({ ...z, selRight: String(e.activeLabel) }));
+                    }}
+                    onMouseUp={() => {
+                      // handled by window mouseup listener; just guard here
+                      setZoom(z => {
+                        if (z.isSelecting && z.selLeft && z.selRight && z.selLeft !== z.selRight) {
+                          const [l, r] = [z.selLeft, z.selRight].sort();
+                          return { isSelecting: false, selLeft: null, selRight: null, zoomedLeft: l, zoomedRight: r };
+                        }
+                        return { ...z, isSelecting: false, selLeft: null, selRight: null };
+                      });
+                    }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke="#ede9e4" />
                     <XAxis
                       dataKey="date"
                       type="category"
-                      ticks={pickTicks(chartData.map(d => d.date as string))}
+                      ticks={pickTicks(displayData.map(d => d.date as string))}
                       tickFormatter={formatDate}
                       tick={{ fill: '#999', fontSize: 11 }}
                       stroke="#d8d5d0"
@@ -1264,6 +1335,18 @@ export default function RollingTool() {
                         />
                       );
                     })}
+                    {/* Drag-to-zoom selection box */}
+                    {zoom.isSelecting && zoom.selLeft && zoom.selRight && zoom.selLeft !== zoom.selRight && (
+                      <ReferenceArea
+                        x1={zoom.selLeft}
+                        x2={zoom.selRight}
+                        fill="#6366f1"
+                        fillOpacity={0.12}
+                        stroke="#6366f1"
+                        strokeOpacity={0.5}
+                        strokeDasharray="4 2"
+                      />
+                    )}
                     {/* Headshot label column — Recharts 3.x: render directly, hooks provide layout */}
                     <HeadshotLayer players={plotPlayers} lineColors={lineColors} lastRow={lastRow} />
                   </LineChart>
