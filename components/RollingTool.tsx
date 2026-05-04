@@ -1327,8 +1327,10 @@ export default function RollingTool() {
                       ticks={xAxisTicks}
                       stroke="#d8d5d0"
                       tick={(props) => {
-                        const { x, y, payload, index } = props as { x: number; y: number; payload: { value: string }; index: number };
-                        const anchor = index === 0 ? 'start' : index === xAxisTicks.length - 1 ? 'end' : 'middle';
+                        const { x, y, payload } = props as { x: number; y: number; payload: { value: string } };
+                        const isFirst = payload.value === xAxisTicks[0];
+                        const isLast  = payload.value === xAxisTicks[xAxisTicks.length - 1];
+                        const anchor  = isFirst ? 'start' : isLast ? 'end' : 'middle';
                         return <text x={x} y={y} dy={12} textAnchor={anchor} fill="#999" fontSize={11}>{formatDate(payload.value)}</text>;
                       }}
                     />
