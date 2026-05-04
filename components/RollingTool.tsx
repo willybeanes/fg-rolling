@@ -284,9 +284,10 @@ function formatDate(iso: string): string {
 
 // Pick tick dates spaced at least minDays apart so the X-axis isn't overcrowded
 function pickTicks(dates: string[], minDays = 7): string[] {
-  const ticks: string[] = [];
-  let lastMs = -Infinity;
-  for (const d of dates) {
+  if (dates.length === 0) return [];
+  const ticks: string[] = [dates[0]];  // always include first date
+  let lastMs = new Date(dates[0]).getTime();
+  for (const d of dates.slice(1)) {
     const ms = new Date(d).getTime();
     if (ms - lastMs >= minDays * 86_400_000) {
       ticks.push(d);
@@ -294,7 +295,7 @@ function pickTicks(dates: string[], minDays = 7): string[] {
     }
   }
   // Always include the last date
-  if (dates.length > 0 && ticks[ticks.length - 1] !== dates[dates.length - 1]) {
+  if (ticks[ticks.length - 1] !== dates[dates.length - 1]) {
     ticks.push(dates[dates.length - 1]);
   }
   return ticks;
