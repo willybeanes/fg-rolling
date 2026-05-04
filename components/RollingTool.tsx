@@ -1084,6 +1084,7 @@ export default function RollingTool() {
   ];
 
   const hasChart = displayData.length > 0 && plotPlayers.length > 0;
+  const xAxisTicks = pickTicks(displayData.map(d => d.date as string));
 
   // Compute display colors: team colors when every player is on a different
   // known team, otherwise fall back to the assigned palette colors.
@@ -1323,10 +1324,13 @@ export default function RollingTool() {
                     <XAxis
                       dataKey="date"
                       type="category"
-                      ticks={pickTicks(displayData.map(d => d.date as string))}
-                      tickFormatter={formatDate}
-                      tick={{ fill: '#999', fontSize: 11 }}
+                      ticks={xAxisTicks}
                       stroke="#d8d5d0"
+                      tick={(props) => {
+                        const { x, y, payload, index } = props as { x: number; y: number; payload: { value: string }; index: number };
+                        const anchor = index === 0 ? 'start' : index === xAxisTicks.length - 1 ? 'end' : 'middle';
+                        return <text x={x} y={y} dy={12} textAnchor={anchor} fill="#999" fontSize={11}>{formatDate(payload.value)}</text>;
+                      }}
                     />
                     <YAxis
                       orientation="right"
