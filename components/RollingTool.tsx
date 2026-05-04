@@ -14,6 +14,7 @@ import {
   Legend,
   usePlotArea,
   useYAxisScale,
+  useXAxisScale,
 } from 'recharts';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -658,6 +659,28 @@ function HeadshotLayer({ players, lineColors, lastRow }: {
         );
       })}
     </>
+  );
+}
+
+// ─── First-date label — renders the leftmost date below the plot area ─────────
+// Recharts' minTickGap filtering sometimes drops the first tick when it's near
+// the chart edge. This bypasses the tick system entirely using hooks.
+function FirstDateLabel({ date }: { date: string }) {
+  const plotArea  = usePlotArea();
+  const xScale    = useXAxisScale(0) as ((v: string) => number) & { bandwidth?: () => number };
+  if (!plotArea || !xScale || !date) return null;
+  const bw = xScale.bandwidth?.() ?? 0;
+  const cx = (xScale(date) ?? plotArea.x) + bw / 2;
+  return (
+    <text
+      x={cx}
+      y={plotArea.y + plotArea.height + 16}
+      textAnchor="start"
+      fill="#999"
+      fontSize={11}
+    >
+      {formatDate(date)}
+    </text>
   );
 }
 
@@ -1324,16 +1347,16 @@ export default function RollingTool() {
                     <XAxis
                       dataKey="date"
                       type="category"
-                      ticks={xAxisTicks}
+                      ticks={xAxisTicks.slice(1)}
                       stroke="#d8d5d0"
                       tick={(props) => {
                         const { x, y, payload } = props as { x: number; y: number; payload: { value: string } };
-                        const isFirst = payload.value === xAxisTicks[0];
-                        const isLast  = payload.value === xAxisTicks[xAxisTicks.length - 1];
-                        const anchor  = isFirst ? 'start' : isLast ? 'end' : 'middle';
+                        const isLast = payload.value === xAxisTicks[xAxisTicks.length - 1];
+                        const anchor = isLast ? 'end' : 'middle';
                         return <text x={x} y={y} dy={12} textAnchor={anchor} fill="#999" fontSize={11}>{formatDate(payload.value)}</text>;
                       }}
                     />
+                    <FirstDateLabel date={xAxisTicks[0] ?? ''} />
                     <YAxis
                       orientation="right"
                       width={YAXIS_W}
