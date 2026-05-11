@@ -906,20 +906,20 @@ export default function RollingTool() {
       colorIndex.current = 0;
       setChartData([]);
       setPlotPlayers([]);
-      setSelectedPlayers(
-        incoming.slice(0, mode === 'regulars' ? MAX_QUICK_REGULARS : MAX_QUICK_ROLE).map((p, i) => ({
-          ...p,
-          color: PLAYER_COLORS[i % PLAYER_COLORS.length],
-          rolling: [],
-          windowStarts: [],
-          gameDates: [],
-          gameVals: [],
-          lastValidIndex: -1,
-          totalGames: 0,
-          headshotUrl: headshotUrl(p.mlbamid),
-        }))
-      );
-      colorIndex.current = Math.min(incoming.length, 5);
+      const newPlayers = incoming.slice(0, mode === 'regulars' ? MAX_QUICK_REGULARS : MAX_QUICK_ROLE).map((p, i) => ({
+        ...p,
+        color: PLAYER_COLORS[i % PLAYER_COLORS.length],
+        rolling: [],
+        windowStarts: [],
+        gameDates: [],
+        gameVals: [],
+        lastValidIndex: -1,
+        totalGames: 0,
+        headshotUrl: headshotUrl(p.mlbamid),
+      }));
+      setSelectedPlayers(newPlayers);
+      // Set colorIndex to actual count so manual additions after quick-add don't reuse colors
+      colorIndex.current = newPlayers.length;
     } catch {
       setError('Failed to load team players');
     } finally {
