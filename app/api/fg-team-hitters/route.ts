@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { scraperFetch } from '@/lib/scraperFetch';
 
 const FG_BASE = 'https://www.fangraphs.com/api/leaders/major-league/data';
 
@@ -26,11 +27,7 @@ async function fetchLeaders(params: Record<string, string | number>): Promise<Re
   const qs = new URLSearchParams(
     Object.entries(params).map(([k, v]) => [k, String(v)])
   );
-  const res = await fetch(`${FG_BASE}?${qs}`, {
-    headers: { Accept: 'application/json' },
-    // skip next cache — responses per-team are small but the underlying
-    // all-player request may be large; rely on our response Cache-Control header.
-  });
+  const res = await scraperFetch(`${FG_BASE}?${qs}`);
   if (!res.ok) throw new Error(`FG API ${res.status}`);
   const data = await res.json();
   return (Array.isArray(data) ? data : (data?.data ?? [])) as Record<string, unknown>[];

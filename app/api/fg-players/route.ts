@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { scraperFetch } from '@/lib/scraperFetch';
 
 // ─── FanGraphs leaderboard field parsers ─────────────────────────────────────
 // FG returns Name and Team as HTML anchor tags:
@@ -34,10 +35,7 @@ async function fetchLeaders(params: Record<string, string | number>): Promise<Re
   const qs = new URLSearchParams(
     Object.entries(params).map(([k, v]) => [k, String(v)])
   );
-  const res = await fetch(`${FG_BASE}?${qs}`, {
-    headers: { Accept: 'application/json' },
-    next: { revalidate: 3600 },
-  });
+  const res = await scraperFetch(`${FG_BASE}?${qs}`);
   if (!res.ok) throw new Error(`FG API ${res.status}`);
   const data = await res.json();
   const rows = Array.isArray(data) ? data : (data?.data ?? []);

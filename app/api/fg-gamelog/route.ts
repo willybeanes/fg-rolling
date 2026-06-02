@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { scraperFetch } from '@/lib/scraperFetch';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -13,10 +14,7 @@ export async function GET(req: NextRequest) {
   const url = `https://www.fangraphs.com/api/players/game-log?playerid=${playerid}&position=&type=${type}&z=${season}`;
 
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FGRolling/1.0)' },
-      next: { revalidate: 300 },
-    });
+    const res = await scraperFetch(url);
 
     if (!res.ok) {
       return NextResponse.json({ error: `FanGraphs returned ${res.status}` }, { status: res.status });
