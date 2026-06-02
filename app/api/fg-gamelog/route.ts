@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const url = `https://www.fangraphs.com/api/players/game-log?playerid=${playerid}&position=&type=${type}&z=${season}`;
 
   try {
-    const res = await scraperFetch(url);
+    const res = await scraperFetch(url, { ttl: 3600 }); // 1h — game logs update intraday
 
     if (!res.ok) {
       return NextResponse.json({ error: `FanGraphs returned ${res.status}` }, { status: res.status });
