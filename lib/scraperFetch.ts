@@ -1,5 +1,5 @@
 /**
- * Fetch a FanGraphs URL via Scrape.do to bypass Cloudflare bot detection,
+ * Fetch a FanGraphs URL via ScraperAPI to bypass Cloudflare bot detection,
  * with a Vercel KV cache (12h TTL for leaderboards, 1h for game logs).
  */
 
@@ -47,16 +47,16 @@ export async function scraperFetch(
     });
   }
 
-  // 2. Fetch via Scrape.do
-  const key = process.env.SCRAPE_DO_KEY;
-  if (!key) throw new Error('SCRAPE_DO_KEY not configured');
-  const proxyUrl = `https://api.scrape.do?token=${key}&url=${encodeURIComponent(url)}`;
+  // 2. Fetch via ScraperAPI
+  const key = process.env.SCRAPER_API_KEY;
+  if (!key) throw new Error('SCRAPER_API_KEY not configured');
+  const proxyUrl = `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(url)}`;
   const res = await fetch(proxyUrl);
 
   // 3. Cache on success (fire and forget)
   if (res.ok) {
     const clone = res.clone();
-    clone.json().then(data => kvSet(cacheKey, data, ttl)).catch(() => {});
+    clone.json().then((data: unknown) => kvSet(cacheKey, data, ttl)).catch(() => {});
   }
 
   return res;
