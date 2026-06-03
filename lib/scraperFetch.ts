@@ -1,6 +1,6 @@
 /**
- * Fetch a FanGraphs URL via ScraperAPI to bypass Cloudflare bot detection,
- * with a Vercel KV cache (12h TTL for leaderboards, 1h for game logs).
+ * Fetch a FanGraphs URL — cookie auth first, ScraperAPI fallback.
+ * Results are cached in Vercel KV (12h leaderboards, 1h game logs).
  */
 
 const KV_URL   = () => process.env.KV_REST_API_URL;
@@ -47,11 +47,29 @@ export async function scraperFetch(
     });
   }
 
-  // 2. Fetch via ScraperAPI
-  const key = process.env.SCRAPER_API_KEY;
-  if (!key) throw new Error('SCRAPER_API_KEY not configured');
-  const proxyUrl = `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(url)}`;
-  const res = await fetch(proxyUrl);
+  const COOKIE      = process.env.FANGRAPHS_COOKIE;
+  const SCRAPER_KEY = process.env.SCRAPER_API_KEY;
+
+  // 2. Fetch — cookie auth first, ScraperAPI fallback
+  let res: Response;
+  if (COOKIE) {
+    res = await fetch(url, {
+      headers: {
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': 'https://www.fangraphs.com/',
+        'Cookie': COOKIE,
+      },
+    });
+    if (res.status === 403 && SCRAPER_KEY) {
+      console.warn('FanGraphs cookie returned 403 — falling back to ScraperAPI');
+      res = await fetch(`https://api.scraperapi.com/?api_key=${SCRAPER_KEY}&url=${encodeURIComponent(url)}`);
+    }
+  } else if (SCRAPER_KEY) {
+    res = await fetch(`https://api.scraperapi.com/?api_key=${SCRAPER_KEY}&url=${encodeURIComponent(url)}`);
+  } else {
+    throw new Error('No FANGRAPHS_COOKIE or SCRAPER_API_KEY configured');
+  }
 
   // 3. Cache on success (fire and forget)
   if (res.ok) {
