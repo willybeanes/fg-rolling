@@ -835,6 +835,7 @@ export default function RollingTool() {
       params.append('p', `${p.playerid}|${p.mlbamid ?? ''}|${p.searchType}|${encodeURIComponent(p.name)}|${p.team ?? ''}`);
     }
     window.history.replaceState(null, '', `?${params.toString()}`);
+    try { window.parent.postMessage({ type: 'bh:urlSync', search: `?${params.toString()}` }, '*'); } catch(_) {}
   }, [playerType, metric, rollingWindow, season, selectedPlayers]);
 
   // Metrics available for the active tab
